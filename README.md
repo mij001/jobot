@@ -7,7 +7,7 @@ Engineering** vacancies and sends the new ones to your **Telegram** and/or
 | Site | How it's read |
 |---|---|
 | [topjobs.lk](https://www.topjobs.lk) | engineering, telecom, R&D, manufacturing … categories |
-| [XpressJobs](https://xpress.jobs) | Electronics/Electrical, Engineering, Telecom … sectors (+ the site's career level) |
+| [XpressJobs](https://xpress.jobs) | Electronics/Electrical, Engineering, Telecom … sectors (+ the site's career level). **Blocks GitHub's servers**, so the daily run skips it – see [below](#xpressjobs) |
 | [ikman.lk](https://ikman.lk/en/ads/sri-lanka/jobs) | engineer, technician, internship, IT jobs |
 | [Rooster](https://rooster.jobs) | keyword searches limited to Sri Lanka |
 | [LinkedIn](https://www.linkedin.com/jobs) | public job search for Sri Lanka, last 7 days |
@@ -17,6 +17,12 @@ Electronics/Embedded, Telecom, Maintenance, General) and an **experience
 level** (Internship, Entry, Mid, Senior, Management), and you choose which
 ones you want. The same vacancy posted on several sites is sent once, with
 links to every site it's on.
+
+Optional extras:
+
+* a **free AI reviewer** that scores every new job against a short profile
+  of you, explains the score in one line, and hides poor fits;
+* a **settings web page** where you tick boxes instead of editing YAML.
 
 A message looks like this:
 
@@ -65,7 +71,44 @@ repository secret**, and add:
 | `EMAIL_TO` | where to send the digest |
 | `SMTP_HOST` / `SMTP_PORT` | only if not Gmail (defaults: `smtp.gmail.com` / `587`) |
 
-### 3. Turn it on
+### 3. (Optional) Free AI reviewer
+
+1. Open <https://aistudio.google.com/apikey>, sign in with your Google
+   account and click **Create API key** (free, no card needed).
+2. Add it as a repository secret named `AI_API_KEY`.
+3. Edit the `ai.profile` text (in `config.yaml` or the settings page) so it
+   describes you.
+
+Each job then shows a line like `⭐ 8/10 – Fresh-graduate power systems
+role`, the best matches come first, and jobs scoring under `ai.min_score`
+are hidden (the footer says how many). Jobs the keywords couldn't place get
+an experience level from the AI too.
+
+Prefer Groq? Get a free key at <https://console.groq.com/keys>, store it as
+`AI_API_KEY` and set `ai.provider: groq`. Any other OpenAI-compatible
+service works with an `AI_BASE_URL` secret plus `ai.models`.
+
+If the key is missing, the free quota runs out or the AI answers nonsense,
+the run carries on with the plain keyword results – nothing is lost.
+
+### 4. (Optional) Settings web page
+
+1. **Settings → Pages**: under *Build and deployment* pick **Deploy from a
+   branch**, choose this repository's default branch and the **/docs**
+   folder, and save. After a minute the page is at
+   `https://<your-user>.github.io/jobot/`.
+2. Open it. Anyone can *view* the settings; to **save** or **run now**,
+   create a token with the page's *Create a token* link:
+   *Only select repositories* → this repo, **Contents: Read and write**,
+   **Actions: Read and write**. Paste it in and tick *Remember on this
+   device* if it's your own phone or computer.
+
+On the page you can switch sub-fields and experience levels on and off,
+edit their keywords, add your own sub-fields, set filters, turn sites on
+and off, set up the AI reviewer, and start a run (or a test run that
+sends nothing). Saving commits `config.yaml`, keeping its comments.
+
+### 5. Turn it on
 
 1. Open the **Actions** tab and enable workflows if GitHub asks.
 2. Pick **Daily EEE job hunt → Run workflow** to try it right away.
@@ -157,6 +200,7 @@ pip install -r requirements.txt
 python -m jobot --list                       # show sub-fields, levels, sites
 python -m jobot --dry-run                    # print today's new jobs, send nothing
 python -m jobot --dry-run --all --levels internship,entry --subfields electronics,automation
+python -m jobot --dry-run --no-ai             # skip the AI reviewer
 ```
 
 With `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` (or the `SMTP_*` variables) set,
@@ -169,9 +213,16 @@ Tests: `pip install -r requirements-dev.txt && python -m pytest`
 
 ## Good to know
 
-* **LinkedIn** limits anonymous access and sometimes answers "429 Too Many
-  Requests". When that happens the other sites still work, and the message
-  footer says LinkedIn failed that day.
+* <a id="xpressjobs"></a>**XpressJobs refuses connections from cloud
+  servers**, including GitHub Actions, so the daily run skips it and the
+  footer says so. It still works when you run jobot on your own computer.
+  To cover it anyway, turn on XpressJobs' own free **job alerts** for the
+  *Electronics / Electrical* sector in your XpressJobs account.
+
+* **LinkedIn** limits anonymous access. jobot searches slowly (6 s between
+  requests) and, when told "429 Too Many Requests", waits a minute and
+  tries once more. If it's still refused, the other sites still work and
+  the footer says how far LinkedIn got.
 * If a site changes its layout, that site shows as *failed* in the footer
   while the rest keep working. A run where *every* site fails is marked
   failed in GitHub Actions, and GitHub e-mails you about it.

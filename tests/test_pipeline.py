@@ -123,3 +123,32 @@ def test_cli_level_override(fake_env):
     jobot_main.run(["--config", str(config), "--state", str(state),
                     "--levels", "senior", "--exclude-unknown-level"])
     assert sent[0].jobs == []
+
+
+def test_source_skipped_on_github_actions(cfg, monkeypatch):
+    monkeypatch.setattr(jobot_main, "SOURCES", {"fake": FakeSource, "broken": BrokenSource})
+    cfg.sources = {"fake": {}, "broken": {"skip_on_github_actions": True}}
+    jobs, results = jobot_main.scrape(cfg, env={"GITHUB_ACTIONS": "true"})
+    assert [j.source_id for j in jobs] == ["1", "2"]
+    assert results[1].skipped and not results[1].error
+    # Off GitHub, the source runs normally (and here fails).
+    _, results = jobot_main.scrape(cfg, env={})
+    assert results[1].error and not results[1].skipped
+
+
+def test_ai_hidden_jobs_are_not_sent_but_remembered(fake_env, monkeypatch):
+    config, state, sent = fake_env
+    config.write_text(config.read_text(encoding="utf-8") + "\nai:\n  enabled: true\n  min_score: 5\n",
+                      encoding="utf-8")
+    monkeypatch.setenv("AI_API_KEY", "k")
+
+    def fake_review(jobs, cfg, env):
+        for j in jobs:
+            j.ai_score, j.ai_reason = 2, "not a fit"
+        return jobot_main.ai.ReviewResult(model="m", scored=len(jobs), hidden=len(jobs))
+
+    monkeypatch.setattr(jobot_main.ai, "review", fake_review)
+    assert jobot_main.run(["--config", str(config), "--state", str(state)]) == 0
+    assert sent[0].jobs == []
+    assert "1 hidden as poor fits" in sent[0].email_text()
+    assert "FakeSite:1" in json.loads(state.read_text())["ids"]

@@ -1,0 +1,508 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>jobot settings</title>
+<meta name="description" content="Choose which Sri Lankan EEE jobs jobot sends you.">
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #ffffff; --text: #1b1f24; --muted: #5b6470; --line: #dde1e6;
+    --accent: #1a5fb4; --accent-text: #ffffff; --ok: #1f7a3d; --warn: #9a6100; --bad: #b42318;
+    --chip: #eef2f7; --shadow: 0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1216; --card: #171b21; --text: #e6e9ed; --muted: #9aa4b0; --line: #2a3038;
+      --accent: #5b9cf0; --accent-text: #0b1220; --ok: #4cc27a; --warn: #e0a83a; --bad: #f2716b;
+      --chip: #212731; --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 920px; margin: 0 auto; padding: 20px 16px 120px; }
+  header { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; margin-bottom: 8px; }
+  h1 { font-size: 24px; margin: 0; }
+  h2 { font-size: 17px; margin: 0 0 4px; }
+  p.hint, .hint { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+  a { color: var(--accent); }
+  .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--chip); color: var(--muted); }
+  .pill.ok { color: var(--ok); } .pill.bad { color: var(--bad); } .pill.warn { color: var(--warn); }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 16px; margin: 16px 0; box-shadow: var(--shadow); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+  .item { border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  .item.off { opacity: .6; }
+  .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .row + .row { margin-top: 8px; }
+  label.field { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+  input[type=text], input[type=password], input[type=number], select, textarea {
+    width: 100%; font: inherit; color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; }
+  input[type=number] { width: 80px; }
+  textarea { min-height: 90px; resize: vertical; font-size: 13px; }
+  textarea.tall { min-height: 140px; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 13px; margin-top: 8px; }
+  .switch { position: relative; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 600; }
+  .switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .switch .track { width: 38px; height: 22px; border-radius: 999px; background: var(--line); position: relative; flex: none; transition: background .15s; }
+  .switch .track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: left .15s; }
+  .switch input:checked + .track { background: var(--accent); }
+  .switch input:checked + .track::after { left: 19px; }
+  .switch input:focus-visible + .track { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button { font: inherit; border-radius: 8px; padding: 8px 14px; border: 1px solid var(--line);
+    background: var(--card); color: var(--text); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button.link { border: none; background: none; color: var(--bad); padding: 0; font-size: 13px; }
+  .bar { position: fixed; left: 0; right: 0; bottom: 0; background: var(--card); border-top: 1px solid var(--line);
+    padding: 10px 16px; }
+  .bar .inner { max-width: 920px; margin: 0 auto; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .bar .status { flex: 1; min-width: 180px; font-size: 13px; color: var(--muted); }
+  .bar .status.bad { color: var(--bad); } .bar .status.ok { color: var(--ok); }
+  #loading { padding: 40px 0; color: var(--muted); }
+  .hidden { display: none !important; }
+  .range { display: flex; align-items: center; gap: 10px; }
+  .range input { flex: 1; }
+  code { background: var(--chip); padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>🔌 jobot settings</h1>
+    <span class="pill" id="repoName">…</span>
+    <a class="pill" id="lastRun" target="_blank" rel="noopener">checking last run…</a>
+  </header>
+  <p class="hint">Choose which Sri Lankan EEE jobs the bot sends you. Changes are saved to
+    <code>config.yaml</code> in your repository and used from the next run.</p>
+
+  <section id="connect">
+    <h2>Connect to GitHub</h2>
+    <p class="hint">Anyone can view these settings. To <b>save</b> or <b>run</b>, paste a GitHub token that can
+      change this repository only.
+      <a id="tokenLink" target="_blank" rel="noopener">Create a token</a>: choose <i>Only select repositories</i> →
+      this repo, and set <b>Contents</b> and <b>Actions</b> to <i>Read and write</i>.</p>
+    <div class="row">
+      <input type="password" id="token" placeholder="github_pat_…" autocomplete="off" style="flex:1;min-width:220px">
+      <label class="row" style="gap:6px;font-size:13px"><input type="checkbox" id="remember"> Remember on this device</label>
+    </div>
+  </section>
+
+  <div id="loading">Loading settings…</div>
+
+  <div id="form" class="hidden">
+    <section>
+      <h2>🎓 Experience levels</h2>
+      <p class="hint">Only jobs at the levels you switch on are sent. The level comes from the job title,
+        then from “N years of experience” in the ad, then from the job site (and from the AI reviewer if it's on).</p>
+      <div class="grid" id="levels"></div>
+      <div class="row" style="margin-top:12px">
+        <label class="switch"><input type="checkbox" id="includeUnknown"><span class="track"></span>
+          Also send jobs that don't say a level</label>
+      </div>
+    </section>
+
+    <section>
+      <h2>⚡ EEE sub-fields</h2>
+      <p class="hint">A job is sent if it matches a switched-on sub-field. Keywords: one per line, whole words,
+        a trailing <code>*</code> matches any ending (<code>electric*</code> → electrical, electricity…).</p>
+      <div class="grid" id="subfields"></div>
+      <div class="row" style="margin-top:12px">
+        <input type="text" id="newSubfield" placeholder="New sub-field name, e.g. Railway Signalling" style="flex:1;min-width:200px">
+        <button id="addSubfield">Add sub-field</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>🧹 Filters</h2>
+      <div class="grid">
+        <div>
+          <label class="field" for="exclude">Never send jobs whose title contains (one per line)</label>
+          <textarea id="exclude" class="tall"></textarea>
+        </div>
+        <div>
+          <label class="field" for="locations">Only these places (one per line, empty = anywhere)</label>
+          <textarea id="locations" placeholder="Colombo&#10;Gampaha"></textarea>
+          <div class="row" style="margin-top:12px">
+            <label class="switch"><input type="checkbox" id="overseas"><span class="track"></span>
+              Include overseas jobs (Gulf, Maldives…)</label>
+          </div>
+          <div class="row">
+            <label class="switch"><input type="checkbox" id="matchDesc"><span class="track"></span>
+              Also match keywords in descriptions</label>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>🌐 Job sites</h2>
+      <div class="grid" id="sources"></div>
+      <label class="field" for="liKeywords">LinkedIn searches (one per line)</label>
+      <textarea id="liKeywords"></textarea>
+    </section>
+
+    <section>
+      <h2>🤖 AI reviewer</h2>
+      <p class="hint">A free AI model reads each new job, scores how well it fits you (0–10), adds a reason and hides
+        poor fits. Needs a free key in the <code>AI_API_KEY</code> secret – see the README.</p>
+      <div class="row">
+        <label class="switch"><input type="checkbox" id="aiEnabled"><span class="track"></span> Use the AI reviewer</label>
+        <select id="aiProvider" style="width:auto">
+          <option value="gemini">Google Gemini (free tier)</option>
+          <option value="groq">Groq (free tier)</option>
+        </select>
+      </div>
+      <label class="field" for="aiProfile">About you – the AI judges jobs against this</label>
+      <textarea id="aiProfile" class="tall"></textarea>
+      <label class="field" for="aiMin">Hide jobs scoring below</label>
+      <div class="range"><input type="range" id="aiMin" min="0" max="10" step="1"><b id="aiMinOut"></b></div>
+    </section>
+
+    <section>
+      <h2>🔔 Notifications</h2>
+      <label class="switch"><input type="checkbox" id="sendEmpty"><span class="track"></span>
+        Send a short “no new jobs today” message</label>
+    </section>
+  </div>
+</main>
+
+<div class="bar">
+  <div class="inner">
+    <div class="status" id="status"></div>
+    <label class="row" style="gap:6px;font-size:13px" title="Run without sending anything; results appear in the Actions log">
+      <input type="checkbox" id="dryRun"> test run</label>
+    <button id="runNow">Run now</button>
+    <button id="save" class="primary" disabled>Save</button>
+  </div>
+</div>
+
+<script type="module">
+import { parseDocument, isSeq } from "./vendor/yaml-2.5.1.js";
+
+const API = "https://api.github.com";
+const CONFIG = "config.yaml";
+const WORKFLOW = "daily.yml";
+const SOURCE_NAMES = { topjobs: "topjobs.lk", xpressjobs: "XpressJobs", ikman: "ikman.lk",
+  rooster: "Rooster", linkedin: "LinkedIn" };
+const $ = (id) => document.getElementById(id);
+const state = { repo: "", branch: "", sha: "", doc: null, dirty: false, token: "" };
+
+// ---------- small helpers ----------
+function el(tag, attrs = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") node.className = v;
+    else if (k === "checked" || k === "value") node[k] = v;
+    else node.setAttribute(k, v);
+  }
+  for (const c of children) node.append(c);
+  return node;
+}
+function toggle(checked, text) {
+  const input = el("input", { type: "checkbox", checked: !!checked });
+  const label = el("label", { class: "switch" }, input, el("span", { class: "track" }), text);
+  return { label, input };
+}
+const lines = (text) => text.split("\n").map((s) => s.trim()).filter(Boolean);
+const slug = (text) => text.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || "custom";
+function setStatus(text, kind = "") { const s = $("status"); s.textContent = text; s.className = "status " + kind; }
+function markDirty() { state.dirty = true; $("save").disabled = false; setStatus("Unsaved changes"); }
+function ago(iso) {
+  const mins = Math.round((Date.now() - new Date(iso)) / 60000);
+  if (mins < 60) return `${mins} min ago`;
+  if (mins < 48 * 60) return `${Math.round(mins / 60)} h ago`;
+  return `${Math.round(mins / 1440)} days ago`;
+}
+function b64decode(b64) {
+  const bin = atob(b64.replace(/\n/g, ""));
+  return new TextDecoder().decode(Uint8Array.from(bin, (ch) => ch.charCodeAt(0)));
+}
+function b64encode(text) {
+  const bytes = new TextEncoder().encode(text);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+async function gh(path, options = {}) {
+  const headers = { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" };
+  if (state.token) headers.Authorization = `Bearer ${state.token}`;
+  const resp = await fetch(API + path, { ...options, headers: { ...headers, ...(options.headers || {}) } });
+  if (!resp.ok) {
+    let msg = `${resp.status}`;
+    try { msg += " " + (await resp.json()).message; } catch {}
+    const err = new Error(msg); err.status = resp.status; throw err;
+  }
+  return resp.status === 204 ? null : resp.json();
+}
+
+// ---------- repo + token ----------
+function detectRepo() {
+  const q = new URLSearchParams(location.search).get("repo");
+  if (q) return q;
+  if (location.hostname.endsWith(".github.io")) {
+    const owner = location.hostname.split(".")[0];
+    const repo = location.pathname.split("/").filter(Boolean)[0];
+    if (repo) return `${owner}/${repo}`;
+  }
+  try { return localStorage.getItem("jobot.repo") || ""; } catch { return ""; }
+}
+function loadToken() {
+  try {
+    const t = localStorage.getItem("jobot.token");
+    if (t) { state.token = t; $("token").value = t; $("remember").checked = true; }
+  } catch {}
+}
+function storeToken() {
+  state.token = $("token").value.trim();
+  try {
+    if ($("remember").checked && state.token) localStorage.setItem("jobot.token", state.token);
+    else localStorage.removeItem("jobot.token");
+  } catch {}
+}
+
+// ---------- rendering ----------
+function render() {
+  const cfg = state.doc.toJS() || {};
+
+  const levels = $("levels"); levels.replaceChildren();
+  for (const [key, lv] of Object.entries(cfg.experience_levels || {})) {
+    const t = toggle(lv.enabled !== false, lv.label || key);
+    const kw = el("textarea", { "data-level": key, "aria-label": `${lv.label || key} keywords` });
+    kw.value = (lv.keywords || []).join("\n");
+    const min = el("input", { type: "number", min: "0", max: "40", "data-min": key, value: lv.min_years ?? "" });
+    const max = el("input", { type: "number", min: "0", max: "40", "data-max": key, value: lv.max_years ?? "" });
+    t.input.dataset.levelOn = key;
+    const card = el("div", { class: "item" + (lv.enabled === false ? " off" : "") }, t.label,
+      el("details", {}, el("summary", {}, "keywords & years"),
+        el("label", { class: "field" }, "Title keywords (one per line)"), kw,
+        el("div", { class: "row", style: "margin-top:8px" }, el("span", { class: "hint", style: "margin:0" }, "Years of experience"),
+          min, el("span", {}, "to"), max)));
+    t.input.addEventListener("change", () => card.classList.toggle("off", !t.input.checked));
+    levels.append(card);
+  }
+  $("includeUnknown").checked = cfg.include_unknown_level !== false;
+
+  const subs = $("subfields"); subs.replaceChildren();
+  for (const [key, sf] of Object.entries(cfg.subfields || {})) subs.append(subfieldCard(key, sf));
+
+  $("exclude").value = (cfg.exclude_title_keywords || []).join("\n");
+  $("locations").value = (cfg.locations || []).join("\n");
+  $("overseas").checked = cfg.include_overseas !== false;
+  $("matchDesc").checked = cfg.match_description !== false;
+
+  const srcs = $("sources"); srcs.replaceChildren();
+  for (const [key, opts] of Object.entries(cfg.sources || {})) {
+    const t = toggle(opts.enabled !== false, SOURCE_NAMES[key] || key);
+    t.input.dataset.source = key;
+    const note = opts.skip_on_github_actions
+      ? el("p", { class: "hint", style: "margin:6px 0 0" }, "Blocks GitHub's servers – only checked when you run jobot on your own computer.")
+      : "";
+    srcs.append(el("div", { class: "item" }, t.label, note));
+  }
+  $("liKeywords").value = ((cfg.sources || {}).linkedin?.keywords || []).join("\n");
+
+  const ai = cfg.ai || {};
+  $("aiEnabled").checked = !!ai.enabled;
+  $("aiProvider").value = ai.provider || "gemini";
+  $("aiProfile").value = (ai.profile || "").trim();
+  $("aiMin").value = ai.min_score ?? 4; $("aiMinOut").textContent = $("aiMin").value;
+  $("sendEmpty").checked = (cfg.notify || {}).send_when_empty !== false;
+}
+
+function subfieldCard(key, sf) {
+  const t = toggle(sf.enabled !== false, "");
+  t.input.dataset.subOn = key;
+  const label = el("input", { type: "text", value: sf.label || key, "data-sub-label": key, "aria-label": "Sub-field name",
+    style: "flex:1;min-width:0;width:auto" });
+  const kw = el("textarea", { "data-sub": key, "aria-label": `${sf.label || key} keywords` });
+  kw.value = (sf.keywords || []).join("\n");
+  const remove = el("button", { class: "link", type: "button" }, "Remove");
+  const card = el("div", { class: "item" + (sf.enabled === false ? " off" : ""), "data-sub-card": key },
+    el("div", { class: "row", style: "flex-wrap:nowrap" }, t.label, label),
+    el("details", {}, el("summary", {}, `${(sf.keywords || []).length} keywords`), kw,
+      el("div", { class: "row", style: "margin-top:8px" }, remove)));
+  t.input.addEventListener("change", () => card.classList.toggle("off", !t.input.checked));
+  remove.addEventListener("click", () => {
+    if (confirm(`Remove the “${label.value}” sub-field?`)) { card.remove(); markDirty(); }
+  });
+  return card;
+}
+
+// ---------- form -> YAML ----------
+function setIfChanged(path, value) {
+  const doc = state.doc;
+  const old = doc.getIn(path, true);
+  const oldJS = old && typeof old.toJSON === "function" ? old.toJSON() : old;
+  if (JSON.stringify(oldJS ?? null) === JSON.stringify(value ?? null)) return;
+  if (isSeq(old) && Array.isArray(value)) {
+    // Swap the items but keep the list node, so comments attached to it survive.
+    old.items = value.map((v) => doc.createNode(v));
+  } else {
+    doc.setIn(path, value);
+  }
+}
+const num = (v) => (v === "" || v == null ? null : Number(v));
+
+function applyForm() {
+  const doc = state.doc;
+  for (const input of document.querySelectorAll("[data-level-on]")) {
+    const key = input.dataset.levelOn;
+    setIfChanged(["experience_levels", key, "enabled"], input.checked);
+    setIfChanged(["experience_levels", key, "keywords"], lines(document.querySelector(`[data-level="${key}"]`).value));
+    for (const [attr, field] of [["data-min", "min_years"], ["data-max", "max_years"]]) {
+      const v = num(document.querySelector(`[${attr}="${key}"]`).value);
+      if (v === null) { if (doc.hasIn(["experience_levels", key, field])) doc.deleteIn(["experience_levels", key, field]); }
+      else setIfChanged(["experience_levels", key, field], v);
+    }
+  }
+  setIfChanged(["include_unknown_level"], $("includeUnknown").checked);
+
+  const present = new Set();
+  for (const card of document.querySelectorAll("[data-sub-card]")) {
+    const key = card.dataset.subCard; present.add(key);
+    const body = {
+      enabled: card.querySelector("[data-sub-on]").checked,
+      label: card.querySelector("[data-sub-label]").value.trim() || key,
+      keywords: lines(card.querySelector("[data-sub]").value),
+    };
+    if (!doc.hasIn(["subfields", key])) { doc.setIn(["subfields", key], body); continue; }
+    for (const [k, v] of Object.entries(body)) setIfChanged(["subfields", key, k], v);
+  }
+  for (const key of Object.keys(doc.toJS().subfields || {})) if (!present.has(key)) doc.deleteIn(["subfields", key]);
+
+  setIfChanged(["exclude_title_keywords"], lines($("exclude").value));
+  setIfChanged(["locations"], lines($("locations").value));
+  setIfChanged(["include_overseas"], $("overseas").checked);
+  setIfChanged(["match_description"], $("matchDesc").checked);
+  for (const input of document.querySelectorAll("[data-source]")) setIfChanged(["sources", input.dataset.source, "enabled"], input.checked);
+  if (doc.hasIn(["sources", "linkedin"])) setIfChanged(["sources", "linkedin", "keywords"], lines($("liKeywords").value));
+
+  setIfChanged(["ai", "enabled"], $("aiEnabled").checked);
+  setIfChanged(["ai", "provider"], $("aiProvider").value);
+  const profile = $("aiProfile").value.trim();
+  if ((doc.toJS().ai?.profile || "").trim() !== profile) doc.setIn(["ai", "profile"], profile + "\n");
+  setIfChanged(["ai", "min_score"], Number($("aiMin").value));
+  setIfChanged(["notify", "send_when_empty"], $("sendEmpty").checked);
+}
+
+function validate() {
+  const cfg = state.doc.toJS();
+  const anySub = Object.values(cfg.subfields || {}).some((s) => s.enabled !== false && (s.keywords || []).length);
+  if (!anySub) return "Switch on at least one sub-field that has keywords.";
+  const anyLevel = Object.values(cfg.experience_levels || {}).some((l) => l.enabled !== false);
+  if (!anyLevel && cfg.include_unknown_level === false) return "Switch on at least one experience level.";
+  const anySource = Object.values(cfg.sources || {}).some((s) => s.enabled !== false);
+  if (!anySource) return "Switch on at least one job site.";
+  return null;
+}
+
+// ---------- actions ----------
+async function load() {
+  setStatus("");
+  const repoInfo = await gh(`/repos/${state.repo}`);
+  state.branch = repoInfo.default_branch;
+  const file = await gh(`/repos/${state.repo}/contents/${CONFIG}?ref=${encodeURIComponent(state.branch)}`);
+  state.sha = file.sha;
+  state.doc = parseDocument(b64decode(file.content));
+  if (state.doc.errors.length) throw new Error("config.yaml has a syntax error: " + state.doc.errors[0].message);
+  render();
+  $("loading").classList.add("hidden"); $("form").classList.remove("hidden");
+  state.dirty = false; $("save").disabled = true;
+  loadLastRun();
+}
+
+async function loadLastRun() {
+  const pill = $("lastRun");
+  try {
+    const data = await gh(`/repos/${state.repo}/actions/workflows/${WORKFLOW}/runs?per_page=1`);
+    const run = data.workflow_runs?.[0];
+    if (!run) { pill.textContent = "no runs yet"; return; }
+    const result = run.status !== "completed" ? "running" : run.conclusion;
+    pill.textContent = `last run: ${result}, ${ago(run.created_at)}`;
+    pill.className = "pill " + (result === "success" ? "ok" : result === "running" ? "warn" : "bad");
+    pill.href = run.html_url;
+  } catch { pill.textContent = "last run: unknown"; }
+}
+
+async function save() {
+  storeToken();
+  if (!state.token) { setStatus("Paste a GitHub token above to save.", "bad"); $("token").focus(); return; }
+  applyForm();
+  const problem = validate();
+  if (problem) { setStatus(problem, "bad"); return; }
+  $("save").disabled = true; setStatus("Saving…");
+  try {
+    const res = await gh(`/repos/${state.repo}/contents/${CONFIG}`, {
+      method: "PUT",
+      body: JSON.stringify({ message: "Update settings from the web page", content: b64encode(state.doc.toString({ lineWidth: 0, flowCollectionPadding: false })),
+        sha: state.sha, branch: state.branch }),
+    });
+    state.sha = res.content.sha; state.dirty = false;
+    setStatus("Saved ✓ – used from the next run.", "ok");
+  } catch (err) {
+    $("save").disabled = false;
+    if (err.status === 409 || err.status === 422) setStatus("Settings changed elsewhere – reload the page and redo your edits.", "bad");
+    else if (err.status === 401 || err.status === 403 || err.status === 404) setStatus("GitHub refused the token (" + err.message + "). Check it can write Contents of this repo.", "bad");
+    else setStatus("Save failed: " + err.message, "bad");
+  }
+}
+
+async function runNow() {
+  storeToken();
+  if (!state.token) { setStatus("Paste a GitHub token above to start a run.", "bad"); $("token").focus(); return; }
+  if (state.dirty && !confirm("You have unsaved changes – the run will use the saved settings. Run anyway?")) return;
+  $("runNow").disabled = true;
+  try {
+    await gh(`/repos/${state.repo}/actions/workflows/${WORKFLOW}/dispatches`, {
+      method: "POST",
+      body: JSON.stringify({ ref: state.branch, inputs: { dry_run: $("dryRun").checked ? "true" : "false" } }),
+    });
+    setStatus($("dryRun").checked ? "Test run started – see the Actions log in ~2 min." : "Run started – results arrive in ~2–3 min.", "ok");
+    setTimeout(loadLastRun, 5000);
+  } catch (err) {
+    setStatus("Couldn't start the run (" + err.message + "). The token needs Actions: Read and write.", "bad");
+  } finally { $("runNow").disabled = false; }
+}
+
+// ---------- wiring ----------
+$("form").addEventListener("input", markDirty);
+$("form").addEventListener("change", markDirty);
+$("aiMin").addEventListener("input", () => { $("aiMinOut").textContent = $("aiMin").value; });
+$("save").addEventListener("click", save);
+$("runNow").addEventListener("click", runNow);
+$("token").addEventListener("change", storeToken);
+$("remember").addEventListener("change", storeToken);
+$("addSubfield").addEventListener("click", () => {
+  const name = $("newSubfield").value.trim();
+  if (!name) { $("newSubfield").focus(); return; }
+  let key = slug(name);
+  while (document.querySelector(`[data-sub-card="${key}"]`)) key += "_2";
+  const card = subfieldCard(key, { enabled: true, label: name, keywords: [] });
+  $("subfields").append(card);
+  card.querySelector("details").open = true;
+  card.querySelector("textarea").focus();
+  $("newSubfield").value = ""; markDirty();
+});
+window.addEventListener("beforeunload", (e) => { if (state.dirty) e.preventDefault(); });
+
+state.repo = detectRepo();
+if (!state.repo) {
+  const r = prompt("Which repository? (owner/name)", "");
+  if (r) { state.repo = r.trim(); try { localStorage.setItem("jobot.repo", state.repo); } catch {} }
+}
+$("repoName").textContent = state.repo || "no repository";
+const [owner] = state.repo.split("/");
+$("tokenLink").href = "https://github.com/settings/personal-access-tokens/new?name=jobot%20settings"
+  + "&description=Save%20jobot%20settings&target_name=" + encodeURIComponent(owner || "")
+  + "&contents=write&actions=write";
+loadToken();
+load().catch((err) => {
+  $("loading").textContent = `Couldn't load ${CONFIG} from ${state.repo || "?"}: ${err.message}`;
+});
+</script>
+</body>
+</html>

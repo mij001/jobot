@@ -17,6 +17,7 @@ class SourceResult:
     name: str
     fetched: int = 0
     error: str | None = None
+    skipped: str | None = None  # reason the site was deliberately not checked
 
 
 @dataclass
@@ -25,6 +26,7 @@ class Report:
     sources: list[SourceResult]
     cfg: Config
     day: date
+    ai_note: str | None = None
 
     # -- shared helpers ---------------------------------------------------
 
@@ -34,10 +36,10 @@ class Report:
         for lv in self.cfg.levels:
             items = [j for j in self.jobs if j.level == lv.key]
             if items:
-                out.append((lv.label, items))
+                out.append((lv.label, _best_first(items)))
         unknown = [j for j in self.jobs if j.level is None]
         if unknown:
-            out.append(("Level not stated", unknown))
+            out.append(("Level not stated", _best_first(unknown)))
         return out
 
     def subfield_labels(self, job: Job) -> str:
@@ -53,9 +55,11 @@ class Report:
         return f"{n} new EEE job{'s' if n != 1 else ''} in Sri Lanka – {when}"
 
     def source_summary(self) -> list[str]:
-        lines = []
+        lines = [self.ai_note] if self.ai_note else []
         for s in self.sources:
-            if s.error:
+            if s.skipped:
+                lines.append(f"{s.name}: skipped ({s.skipped})")
+            elif s.error:
                 lines.append(f"{s.name}: failed ({s.error})")
             else:
                 lines.append(f"{s.name}: {s.fetched} scanned")
@@ -69,6 +73,8 @@ class Report:
         if org:
             lines.append(f"🏢 {org}")
         lines.append(f"🎯 {escape(self.subfield_labels(job))}")
+        if job.ai_score is not None:
+            lines.append(f"⭐ {job.ai_score}/10 – {escape(job.ai_reason)}")
         if job.salary:
             lines.append(f"💰 {escape(job.salary)}")
         if job.closing:
@@ -109,6 +115,8 @@ class Report:
                 if org:
                     out.append(f"  {org}")
                 out.append(f"  Field: {self.subfield_labels(j)}")
+                if j.ai_score is not None:
+                    out.append(f"  Fit: {j.ai_score}/10 – {j.ai_reason}")
                 if j.salary:
                     out.append(f"  Salary: {j.salary}")
                 if j.closing:
@@ -133,15 +141,22 @@ class Report:
                 org = " · ".join(escape(x) for x in (j.company, j.location) if x)
                 closing = f" · closes {escape(j.closing)}" if j.closing else ""
                 salary = f" · {escape(j.salary)}" if j.salary else ""
+                fit = (f'<br><span style="color:#1a6d3d;font-size:13px">⭐ {j.ai_score}/10 – '
+                       f'{escape(j.ai_reason)}</span>') if j.ai_score is not None else ""
                 parts.append(
                     '<div style="margin:0 0 14px">'
                     f'<a href="{escape(j.url, quote=True)}" style="font-weight:bold;font-size:15px">'
                     f'{escape(j.title)}</a><br>'
                     f'<span style="color:#444">{org}</span><br>'
                     f'<span style="color:#666;font-size:13px">{escape(self.subfield_labels(j))}{salary}{closing}'
-                    f' · {" | ".join(links)}</span>'
+                    f' · {" | ".join(links)}</span>{fit}'
                     '</div>'
                 )
         summary = escape(" · ".join(self.source_summary()))
         parts.append(f'<p style="color:#888;font-size:12px">Sources: {summary}</p></div>')
         return "\n".join(parts)
+
+
+def _best_first(jobs: list[Job]) -> list[Job]:
+    """Highest AI score first; unscored jobs keep their order after scored ones."""
+    return sorted(jobs, key=lambda j: (j.ai_score is None, -(j.ai_score or 0)))

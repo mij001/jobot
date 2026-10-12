@@ -25,6 +25,8 @@ class Job:
     subfields: list[str] = field(default_factory=list)
     level: str | None = None
     also_on: list[tuple[str, str]] = field(default_factory=list)  # (source, url) duplicates
+    ai_score: int | None = None  # 0-10 from the optional AI reviewer
+    ai_reason: str = ""
 
     @property
     def uid(self) -> str:

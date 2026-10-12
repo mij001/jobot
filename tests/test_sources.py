@@ -95,3 +95,25 @@ def test_linkedin_experience_filter(cfg):
     assert linkedin.experience_filter(opts, cfg) == "1"
     cfg.only_levels([lv.key for lv in cfg.levels])
     assert linkedin.experience_filter(opts, cfg) == ""
+
+
+def test_linkedin_waits_and_retries_once_when_rate_limited(cfg, fixture_text, monkeypatch):
+    import requests
+
+    waits = []
+    monkeypatch.setattr(linkedin.time, "sleep", waits.append)
+    calls = {"n": 0}
+
+    class Resp:
+        def __init__(self, status, text=""):
+            self.status_code, self.text = status, text
+
+    class FakeHttp:
+        def get(self, url, params=None):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise requests.HTTPError(response=Resp(429))
+            return Resp(200, fixture_text("linkedin.html"))
+
+    jobs = linkedin.fetch(FakeHttp(), {"keywords": ["electrical engineer"], "retry_wait_seconds": 30}, cfg)
+    assert waits == [30] and len(jobs) == 2

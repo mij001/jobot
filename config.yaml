@@ -371,6 +371,11 @@ sources:
 
   xpressjobs:
     enabled: true
+    # XpressJobs refuses connections from cloud servers (including GitHub
+    # Actions), so the daily run skips it. It still works when you run
+    # jobot on your own computer. Tip: turn on XpressJobs' own free job
+    # alerts for the Electronics/Electrical sector to cover it.
+    skip_on_github_actions: true
     # XpressJobs sector ids:
     #   24 Electronics/Electrical   25 Engineering/Manufacturing
     #   132 Technical/Mechanical    50 Telecommunications
@@ -415,7 +420,11 @@ sources:
       - solar engineer
       - electrical engineering intern
     posted_within_days: 7
-    max_pages: 2  # 10 jobs per page, per keyword
+    max_pages: 1  # 10 jobs per page, per keyword
+    # LinkedIn limits anonymous searches, so go slowly and, when it says
+    # "too many requests", wait once before trying again.
+    delay_seconds: 6
+    retry_wait_seconds: 60
     # LinkedIn's own experience filter is applied from your enabled levels
     # above. LinkedIn codes: 1 Internship, 2 Entry, 3 Associate,
     # 4 Mid-Senior, 5 Director, 6 Executive
@@ -428,7 +437,32 @@ sources:
 
 
 # ===========================================================================
-#  4. NOTIFICATIONS
+#  4. AI REVIEWER (optional, free)
+#  After the keyword filter, a free AI model reads each NEW job and scores
+#  how well it fits the profile below (0-10), adds a one-line reason, fills in
+#  experience levels the keywords missed, and hides jobs scoring under
+#  `min_score`. Needs a free API key in the AI_API_KEY secret (see README):
+#    gemini – Google AI Studio key (free tier, Flash models)
+#    groq   – console.groq.com key (free tier)
+#  Without a key this step is skipped and you get the keyword results.
+# ===========================================================================
+ai:
+  enabled: true
+  provider: gemini
+  # Models to try, in order (blank = good free defaults for the provider).
+  models: []
+  profile: |
+    Electrical & Electronic Engineering (EEE) graduate in Sri Lanka looking for
+    engineering jobs in power, electronics, automation, telecom and related
+    fields. Prefer engineer / trainee-engineer roles over technician, sales or
+    admin roles. Open to internships and entry- to mid-level positions.
+  min_score: 4
+  batch_size: 20          # jobs per AI request
+  requests_per_minute: 8  # stay under the free-tier limit
+
+
+# ===========================================================================
+#  5. NOTIFICATIONS
 #  Channels turn on automatically when their secrets are set
 #  (see README: TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID, and/or SMTP_* + EMAIL_TO).
 # ===========================================================================

@@ -9,7 +9,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import notifiers
+from . import ai, notifiers
 from .config import Config, ConfigError, load_config
 from .filters import select_jobs
 from .http import Http
@@ -46,6 +46,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help="print the report instead of sending it; don't update the state file")
     p.add_argument("--all", action="store_true",
                    help="report every matching open job, not only ones not sent before")
+    p.add_argument("--no-ai", action="store_true", help="skip the AI review step this run")
     p.add_argument("--list", action="store_true", help="show sub-fields, levels and sources, then exit")
     p.add_argument("-v", "--verbose", action="store_true")
     return p
@@ -78,7 +79,9 @@ def print_options(cfg: Config) -> None:
         print(f"  {mark(opts.get('enabled', True))} {key:<18} {name}")
 
 
-def scrape(cfg: Config, http: Http) -> tuple[list[Job], list[SourceResult]]:
+def scrape(cfg: Config, env: dict[str, str] | None = None) -> tuple[list[Job], list[SourceResult]]:
+    env = dict(os.environ if env is None else env)
+    on_github = env.get("GITHUB_ACTIONS") == "true"
     jobs: list[Job] = []
     results: list[SourceResult] = []
     for key, opts in cfg.enabled_sources().items():
@@ -87,6 +90,12 @@ def scrape(cfg: Config, http: Http) -> tuple[list[Job], list[SourceResult]]:
             log.warning("Unknown source %r in config – skipped", key)
             continue
         result = SourceResult(name=module.NAME)
+        results.append(result)
+        if on_github and opts.get("skip_on_github_actions"):
+            result.skipped = "it blocks GitHub's servers"
+            log.info("%-12s skipped: it blocks GitHub's servers", module.NAME)
+            continue
+        http = Http(delay=float(opts.get("delay_seconds", 1.0)))
         try:
             found = module.fetch(http, opts, cfg)
             result.fetched = len(found)
@@ -96,7 +105,6 @@ def scrape(cfg: Config, http: Http) -> tuple[list[Job], list[SourceResult]]:
             result.error = _short_error(exc)
             log.warning("%-12s FAILED: %s", module.NAME, result.error)
             log.debug("details", exc_info=True)
-        results.append(result)
     return jobs, results
 
 
@@ -110,7 +118,7 @@ def _short_error(exc: Exception) -> str:
 
 
 def _redact(text: str, env: dict[str, str]) -> str:
-    for key in ("TELEGRAM_BOT_TOKEN", "SMTP_PASSWORD"):
+    for key in ("TELEGRAM_BOT_TOKEN", "SMTP_PASSWORD", "AI_API_KEY"):
         if env.get(key):
             text = text.replace(env[key], "***")
     return text
@@ -137,21 +145,32 @@ def run(argv: list[str] | None = None) -> int:
     log.info("Levels:     %s%s", ", ".join(lv.key for lv in cfg.enabled_levels) or "(none)",
              " + unknown" if cfg.include_unknown_level else "")
 
-    all_jobs, results = scrape(cfg, Http())
+    all_jobs, results = scrape(cfg)
     matched = select_jobs(all_jobs, cfg)
     store = SeenStore(args.state)
     new = matched if args.all else [j for j in matched if store.is_new(j)]
     log.info("%d jobs scanned, %d match your filters, %d new", len(all_jobs), len(matched), len(new))
 
+    env = dict(os.environ)
+    shown, ai_note = new, None
+    if cfg.ai.enabled and not args.no_ai:
+        if env.get("AI_API_KEY") or env.get("AI_BASE_URL"):
+            outcome = ai.review(new, cfg, env)
+            ai_note = outcome.summary
+            shown = [j for j in new if not ai.is_hidden(j, cfg)]
+            log.info("%s", ai_note)
+        else:
+            log.info("AI review is on but AI_API_KEY isn't set – skipping it")
+
     today = datetime.now(SRI_LANKA_TZ).date()
-    report = Report(jobs=new, sources=results, cfg=cfg, day=today)
-    all_sources_failed = bool(results) and all(r.error for r in results)
+    report = Report(jobs=shown, sources=results, cfg=cfg, day=today, ai_note=ai_note)
+    checked = [r for r in results if not r.skipped]
+    all_sources_failed = bool(checked) and all(r.error for r in checked)
 
     if args.dry_run:
         print(report.email_text())
         return 1 if all_sources_failed else 0
 
-    env = dict(os.environ)
     channels = notifiers.configured_channels(env)
     if not channels:
         print(report.email_text())
@@ -161,7 +180,7 @@ def run(argv: list[str] | None = None) -> int:
         return 1 if all_sources_failed else 0
 
     delivered = False
-    if new or cfg.send_when_empty:
+    if shown or cfg.send_when_empty:
         for name, channel in channels.items():
             try:
                 channel.send(report, env)

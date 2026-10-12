@@ -56,6 +56,8 @@ jobs:
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          AI_BASE_URL: ${{ secrets.AI_BASE_URL }}
           # Manual-run inputs go through env vars, never straight into the script.
           IN_SUBFIELDS: ${{ inputs.subfields }}
           IN_LEVELS: ${{ inputs.levels }}

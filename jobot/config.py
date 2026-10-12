@@ -37,6 +37,17 @@ class Level:
 
 
 @dataclass
+class AIConfig:
+    enabled: bool = False
+    provider: str = "gemini"
+    models: list[str] = field(default_factory=list)
+    profile: str = ""
+    min_score: int = 4
+    batch_size: int = 20
+    requests_per_minute: int = 8
+
+
+@dataclass
 class Config:
     subfields: list[Subfield]
     levels: list[Level]
@@ -51,6 +62,7 @@ class Config:
     sources: dict[str, dict[str, Any]] = field(default_factory=dict)
     send_when_empty: bool = True
     remember_days: int = 60
+    ai: AIConfig = field(default_factory=AIConfig)
 
     @property
     def enabled_subfields(self) -> list[Subfield]:
@@ -156,6 +168,21 @@ def parse_config(raw: dict[str, Any]) -> Config:
         sources={str(k): dict(v or {}) for k, v in (raw.get("sources") or {}).items()},
         send_when_empty=bool(notify.get("send_when_empty", True)),
         remember_days=int(notify.get("remember_days", 60)),
+        ai=_parse_ai(raw.get("ai") or {}),
+    )
+
+
+def _parse_ai(body: dict[str, Any]) -> AIConfig:
+    if not isinstance(body, dict):
+        raise ConfigError("ai must be a mapping")
+    return AIConfig(
+        enabled=bool(body.get("enabled", False)),
+        provider=str(body.get("provider") or "gemini").strip().lower(),
+        models=_str_list(body.get("models"), "ai.models"),
+        profile=str(body.get("profile") or ""),
+        min_score=_opt_int(body.get("min_score", 4), "ai.min_score") or 0,
+        batch_size=_opt_int(body.get("batch_size"), "ai.batch_size") or 20,
+        requests_per_minute=_opt_int(body.get("requests_per_minute"), "ai.requests_per_minute") or 8,
     )
 
 

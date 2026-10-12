@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 
 import requests
 from bs4 import BeautifulSoup
@@ -67,9 +68,22 @@ def experience_filter(opts: dict, cfg: Config) -> str:
     return ",".join(str(c) for c in sorted(codes))
 
 
+def _get(http: Http, params: dict, retry_wait: float) -> str:
+    """GET one results page; when LinkedIn says "slow down", wait once and retry."""
+    try:
+        return http.get(API, params=params).text
+    except requests.HTTPError as exc:
+        if not _is_rate_limited(exc) or retry_wait <= 0:
+            raise
+        log.info("LinkedIn asked us to slow down; waiting %ds", retry_wait)
+        time.sleep(retry_wait)
+        return http.get(API, params=params).text
+
+
 def fetch(http: Http, opts: dict, cfg: Config) -> list[Job]:
     days = int(opts.get("posted_within_days", 7))
-    max_pages = int(opts.get("max_pages", 2))
+    max_pages = int(opts.get("max_pages", 1))
+    retry_wait = float(opts.get("retry_wait_seconds", 60))
     f_e = experience_filter(opts, cfg)
     jobs: dict[str, Job] = {}
     errors: list[Exception] = []
@@ -84,7 +98,7 @@ def fetch(http: Http, opts: dict, cfg: Config) -> list[Job]:
             if f_e:
                 params["f_E"] = f_e
             try:
-                batch = parse(http.get(API, params=params).text)
+                batch = parse(_get(http, params, retry_wait))
             except requests.RequestException as exc:
                 errors.append(exc)
                 log.warning("LinkedIn %r page %d failed: %s", keyword, page + 1, exc)
