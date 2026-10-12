@@ -1,0 +1,59 @@
+{
+ "status": 200,
+ "body": {
+  "count": 2,
+  "data": [
+   {
+    "id": 519660,
+    "title": "Assistant Manager – Sales",
+    "description": "🚨 **WE’RE HIRING | ASSISTANT MANAGER – SALES**\n\nAre you an experienced sales professional with strong leadership skills and a passion for driving team performance?\n\nWe are looking for an \\*\\*Assistant Manager – Sales\\*\\* to join our team and support the Sales Manager in leading, developing, and achi",
+    "company_id": 155699,
+    "job_type": "full-time",
+    "location": "Colombo, Sri Lanka",
+    "department": "Operations",
+    "tags": [
+     "sales team leadership",
+     "business development",
+     "target & performance management",
+     "negotiation & client relationship management",
+     "crm & sales reporting"
+    ],
+    "created_at": "2026-09-24 11:53:26",
+    "updated_at": "2026-10-12 09:42:38",
+    "remote": false,
+    "subclass": "Other",
+    "subsidiary_company_industry": null,
+    "company_name": "Setjob.lk",
+    "subsidiary_company_name": null,
+    "company_logo_url": "https://rooster-prod-prod-manage-bulk-operations-bucket.s3.amazonaws.com/companyLogos/set-logo.png_1762151925353",
+    "subsidiary_company_logo_url": null,
+    "min_salary": 180000,
+    "max_salary": 200000,
+    "salary_frequency": "month",
+    "salary_currency": "LKR",
+    "is_verified": true,
+    "class": "Sales"
+   },
+   {
+    "id": 515801,
+    "title": "Electrical Engineer",
+    "description": "Seeking an experienced **Electrical Engineer** with hands-on experience in industrial automation and PLC programming.\n\n- Bachelor's degree in Electrical Engineering 3–5 years of experience",
+    "company_id": 1,
+    "job_type": "internship",
+    "location": "Colombo, Sri Lanka",
+    "department": "Engineering",
+    "tags": [],
+    "created_at": "2026-10-05 10:00:00",
+    "remote": false,
+    "subclass": "Electrical Engineering",
+    "company_name": "Example Automation (Pvt) Ltd",
+    "subsidiary_company_name": null,
+    "min_salary": null,
+    "max_salary": null,
+    "salary_frequency": null,
+    "salary_currency": null,
+    "class": "Engineering"
+   }
+  ]
+ }
+}

@@ -1,0 +1,82 @@
+name: Daily EEE job hunt
+
+on:
+  schedule:
+    # 02:45 UTC = 08:15 Sri Lanka time, every day. GitHub may start
+    # scheduled runs a little late when it is busy.
+    - cron: "45 2 * * *"
+  workflow_dispatch:
+    inputs:
+      subfields:
+        description: "Only these sub-fields, comma-separated (blank = use config.yaml). e.g. power,electronics"
+        required: false
+        default: ""
+      levels:
+        description: "Only these experience levels, comma-separated (blank = use config.yaml). e.g. internship,entry"
+        required: false
+        default: ""
+      resend_all:
+        description: "Send every currently open matching job, not just new ones"
+        type: boolean
+        default: false
+      dry_run:
+        description: "Only print results in the log; don't notify or remember"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write  # to commit data/seen_jobs.json
+
+concurrency:
+  group: jobot
+  cancel-in-progress: false
+
+jobs:
+  hunt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: pip install -r requirements.txt
+
+      - name: Find jobs and notify
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          # Manual-run inputs go through env vars, never straight into the script.
+          IN_SUBFIELDS: ${{ inputs.subfields }}
+          IN_LEVELS: ${{ inputs.levels }}
+          IN_RESEND_ALL: ${{ inputs.resend_all }}
+          IN_DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          args=()
+          [ -n "$IN_SUBFIELDS" ] && args+=(--subfields "$IN_SUBFIELDS")
+          [ -n "$IN_LEVELS" ] && args+=(--levels "$IN_LEVELS")
+          [ "$IN_RESEND_ALL" = "true" ] && args+=(--all)
+          [ "$IN_DRY_RUN" = "true" ] && args+=(--dry-run)
+          python -m jobot "${args[@]}"
+
+      - name: Remember sent jobs
+        if: always()
+        run: |
+          if [ -n "$(git status --porcelain -- data/)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add data/
+            git commit -m "Update seen jobs [skip ci]"
+            git pull --rebase
+            git push
+          fi

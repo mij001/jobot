@@ -1,0 +1,439 @@
+# ---------------------------------------------------------------------------
+#  jobot – Sri Lankan EEE job hunter: configuration
+#
+#  Edit this file (on GitHub you can click the pencil icon) to change what the
+#  bot looks for. Changes take effect on the next daily run.
+#
+#  Keyword rules (used everywhere below):
+#    * case-insensitive, whole words / phrases:  "plc" will NOT match "replica"
+#    * a trailing * is a wildcard:               "electric*" matches electrical,
+#                                                electricity, electrician ...
+# ---------------------------------------------------------------------------
+
+
+# ===========================================================================
+#  1. EEE SUB-FIELDS
+#  A job is reported if it matches at least one ENABLED sub-field.
+#  Set `enabled: false` to ignore a sub-field, edit the keyword lists, or add
+#  your own sub-field (any new key with label/keywords works).
+# ===========================================================================
+subfields:
+  power:
+    enabled: true
+    label: Power & Energy
+    keywords:
+      - power engineer
+      - power system*
+      - power plant
+      - power station
+      - power distribution
+      - power generation
+      - power electronics
+      - substation
+      - switchgear
+      - power transformer*
+      - distribution transformer*
+      - transformer engineer*
+      - transformer technician*
+      - transmission line*
+      - distribution engineer
+      - protection engineer
+      - high voltage
+      - medium voltage
+      - power grid
+      - smart grid
+      - national grid
+      - grid connected
+      - grid-tied
+      - energy engineer
+      - energy management
+      - CEB
+      - LECO
+      - Ceylon Electricity Board
+
+  renewable:
+    enabled: true
+    label: Renewable Energy / Solar
+    keywords:
+      - solar
+      - photovoltaic
+      - PV
+      - renewable*
+      - wind turbine*
+      - wind power
+      - hydro power
+      - hydropower
+      - mini hydro
+      - battery energy
+      - BESS
+      - inverter*
+      - EV charging
+
+  building_services:
+    enabled: true
+    label: Building Services / MEP (Electrical)
+    keywords:
+      - MEP
+      - building services
+      - electrical design
+      - electrical site engineer
+      - electrical installation*
+      - earthing
+      - lightning protection
+      - lighting design
+      - ELV
+      - BMS
+      - fire alarm
+      - electrical consultant
+      - electrical estimator
+      - electrical draughtsman
+      - electrical draftsman
+
+  automation:
+    enabled: true
+    label: Automation, Control & Instrumentation
+    keywords:
+      - industrial automation
+      - automation engineer*
+      - automation technician*
+      - electrical automation
+      - building automation
+      - home automation*
+      - factory automation
+      - PLC engineer*
+      - PLC programm*
+      - PLC technician*
+      - PLCs
+      - SCADA
+      - DCS
+      - HMI
+      - control engineer*
+      - controls engineer*
+      - control systems engineer*
+      - control system engineer*
+      - industrial control*
+      - process control
+      - motor control*
+      - control panel*
+      - instrumentation
+      - mechatronic*
+      - robotic*
+      - VFD
+      - drives engineer
+
+  electronics:
+    enabled: true
+    label: Electronics / Embedded / Hardware
+    keywords:
+      - electronic*
+      - embedded
+      - firmware
+      - PCB
+      - hardware engineer
+      - hardware design*
+      - circuit design
+      - microcontroller*
+      - IoT
+      - FPGA
+      - VLSI
+      - ASIC
+      - analog design
+      - RF engineer
+      - RF design
+      - semiconductor*
+      - hardware test engineer
+      - biomedical engineer
+
+  telecom:
+    enabled: true
+    label: Telecommunication
+    keywords:
+      - telecom*
+      - RF
+      - radio network
+      - RAN engineer*
+      - radio access
+      - LTE
+      - 5G
+      - 4G
+      - microwave
+      - fiber optic*
+      - fibre optic*
+      - optical network*
+      - transmission engineer
+      - network planning engineer
+      - core network
+      - satellite communication*
+
+  maintenance:
+    enabled: true
+    label: Electrical Maintenance & Facilities
+    keywords:
+      - electrical maintenance
+      - maintenance engineer
+      - plant engineer
+      - facilities engineer
+      - facility engineer
+      - utility engineer
+      - utilities engineer
+      - electrical supervisor
+      - electrical technical officer
+      - engineering technical officer
+      - generator*
+
+  general:
+    enabled: true
+    label: General Electrical / Electronic
+    keywords:
+      - electrical
+      - electrical engineer*
+      - electrical and electronic*
+      - electrical & electronic*
+      - EEE
+      - E&E
+      - B.Sc. Eng (Electrical)
+      - electrical engineering graduate*
+
+
+# Job titles containing any of these are always dropped (whole words/phrases).
+# Handy for removing noise, e.g. add "technician" and "electrician" if you only
+# want engineer-level roles.
+exclude_title_keywords:
+  - quantity surveyor
+  - welder
+  - driver
+  - helper
+  - labourer
+  - security guard
+  - accountant
+  - call center
+  - call centre
+  - test automation
+  - quality control engineer
+  - devops
+  # - technician
+  # - electrician
+
+# Matching on the job title is always on. Descriptions / site categories are
+# noisier, so a job that only mentions your keywords in its description (e.g.
+# a plain "Assistant Engineer" ad) is kept only if
+#   * its title contains one of `description_match_titles`, and
+#   * the description has at least `min_description_hits` DIFFERENT keywords.
+match_description: true
+min_description_hits: 2
+description_match_titles:
+  - engineer*
+  - engineering
+  - technical officer*
+  - technician*
+  - technologist*
+  - trainee*
+  - intern
+  - interns
+  - internship*
+  - graduate*
+  - draughtsman
+  - draftsman
+
+# Only keep jobs whose location contains one of these (empty = anywhere).
+# e.g. [Colombo, Gampaha, Kandy, Remote]
+locations: []
+
+# Sri Lankan sites also carry many overseas jobs (Gulf, Maldives ...).
+# Set to false to skip ads that mention one of `overseas_keywords` in the
+# title or location.
+include_overseas: true
+overseas_keywords:
+  - foreign job
+  - overseas
+  - abroad
+  - Kuwait
+  - Dubai
+  - Abu Dhabi
+  - UAE
+  - United Arab Emirates
+  - Qatar
+  - Saudi*
+  - KSA
+  - Oman
+  - Bahrain
+  - Maldives
+  - Singapore
+  - Malaysia
+  - Japan
+  - Korea
+  - Australia
+  - New Zealand
+  - Canada
+  - United Kingdom
+  - Poland
+  - Romania
+  - Israel
+
+
+# ===========================================================================
+#  2. EXPERIENCE LEVELS
+#  Levels are listed from most junior to most senior.
+#  Each job is assigned ONE level, using (in order):
+#    a) keywords in the job title – if several levels match, the most senior
+#       one wins (e.g. "Trainee Engineer" -> entry, "Senior Manager" -> management)
+#    b) "X years of experience" found in the title/description, mapped with
+#       min_years / max_years
+#    c) the level the job site itself shows (XpressJobs, Rooster, ikman)
+#  Only jobs in ENABLED levels are reported.
+# ===========================================================================
+experience_levels:
+  internship:
+    enabled: true
+    label: Internship / Trainee
+    keywords:
+      - intern
+      - interns
+      - internship*
+      - trainee
+      - undergraduate*
+      - apprentice*
+      - industrial training
+      - industrial placement
+
+  entry:
+    enabled: true
+    label: Entry level / Fresh graduate
+    min_years: 0
+    max_years: 1
+    keywords:
+      - junior*
+      - jr
+      - graduate
+      - associate*
+      - fresh graduate*
+      - freshers
+      - entry level
+      - trainee engineer*
+      - engineer trainee
+      - graduate trainee*
+      - management trainee*
+      - engineering trainee*
+      - assistant engineer*
+      - associate engineer*
+      - graduate engineer*
+
+  mid:
+    enabled: true
+    label: Mid level
+    min_years: 2
+    max_years: 4
+    keywords:
+      - mid level
+      - engineer ii
+
+  senior:
+    enabled: false
+    label: Senior
+    min_years: 5
+    max_years: 9
+    keywords:
+      - senior*
+      - sr
+      - lead
+      - principal
+      - engineer iii
+
+  management:
+    enabled: false
+    label: Manager / Head
+    min_years: 10
+    keywords:
+      - manager
+      - head of
+      - director
+      - general manager
+      - deputy general manager
+      - DGM
+      - AGM
+      - chief
+
+# Many ads don't say what level they are. Keep those?
+include_unknown_level: true
+
+
+# ===========================================================================
+#  3. JOB SITES
+# ===========================================================================
+sources:
+  topjobs:
+    enabled: true
+    # topjobs.lk "functional area" codes to scan:
+    #   MAE Eng-Mech/Auto/Elec   ITT IT-Telecoms   HNS IT-Hardware/Networks
+    #   RLT R&D/Science          POS Manufacturing/Operations
+    #   SQC Supervision/Quality Control
+    categories: [MAE, ITT, HNS, RLT, POS, SQC]
+
+  xpressjobs:
+    enabled: true
+    # XpressJobs sector ids:
+    #   24 Electronics/Electrical   25 Engineering/Manufacturing
+    #   132 Technical/Mechanical    50 Telecommunications
+    #   139 IT-Hardware/Networks/Systems
+    sectors: [24, 25, 132, 50, 139]
+    max_pages: 10  # 100 jobs per page
+    # How XpressJobs' own "career level" maps to the levels above.
+    career_levels:
+      1: entry       # Entry Level
+      2: mid         # Associate
+      3: mid         # Mid-Senior Level
+      4: senior      # Senior
+      5: management  # Executive
+      6: management  # Director
+
+  ikman:
+    enabled: true
+    categories:
+      - engineer-jobs
+      - technician-jobs
+      - internships-and-trainees-jobs
+      - it-and-network-industry-jobs
+    max_pages: 4  # 25 ads per page
+
+  rooster:
+    enabled: true
+    country: Sri Lanka
+    queries: [electrical, electronic, engineer, engineering, automation, embedded, telecommunication, solar, intern]
+    max_pages: 3  # 100 jobs per page, per query
+
+  linkedin:
+    enabled: true
+    location: Sri Lanka
+    keywords:
+      - electrical engineer
+      - electronics engineer
+      - electrical and electronic engineering
+      - power engineer
+      - embedded engineer
+      - automation engineer
+      - telecommunication engineer
+      - solar engineer
+      - electrical engineering intern
+    posted_within_days: 7
+    max_pages: 2  # 10 jobs per page, per keyword
+    # LinkedIn's own experience filter is applied from your enabled levels
+    # above. LinkedIn codes: 1 Internship, 2 Entry, 3 Associate,
+    # 4 Mid-Senior, 5 Director, 6 Executive
+    experience_codes:
+      internship: [1]
+      entry: [2, 3]
+      mid: [3, 4]
+      senior: [4]
+      management: [5, 6]
+
+
+# ===========================================================================
+#  4. NOTIFICATIONS
+#  Channels turn on automatically when their secrets are set
+#  (see README: TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID, and/or SMTP_* + EMAIL_TO).
+# ===========================================================================
+notify:
+  # Send a short "no new jobs today" message so you know the bot ran.
+  send_when_empty: true
+  # Forget a vacancy after this many days (a re-post after that is re-sent).
+  remember_days: 60
