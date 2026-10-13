@@ -20,6 +20,20 @@ _YEARS_RE = re.compile(
 )
 _EXPERIENCE_RE = re.compile(r"\bexp(?:erience[sd]?|\.)?\b", re.IGNORECASE)
 
+# "NVQ Level 05", "NVQ L5", "NVQ-5", "NVQ level IV", "NVQ 5/6", "NVQ level 5 or 6"
+_ROMAN = {"i": 1, "ii": 2, "iii": 3, "iv": 4, "v": 5, "vi": 6, "vii": 7}
+_NVQ_NUM = r"(?:0?[1-7]|vii|vi|v|iv|iii|ii|i)\b"
+_NVQ_RE = re.compile(
+    r"\bnvq\s*[-–:]?\s*(?:level|lvl|l)?\s*[-–:.]?\s*(" + _NVQ_NUM + r")"
+    r"((?:\s*(?:/|,|&|or|and|-|–|to)\s*(?:level\s*)?" + _NVQ_NUM + r"(?!\s*\+?\s*(?:years?|yrs?)))*)",
+    re.IGNORECASE,
+)
+# "degree" that isn't a qualification: "360 degree", "a high degree of", "40 degrees Celsius".
+_NOT_A_DEGREE = re.compile(
+    r"\b\d+\s*-?\s*degrees?\b|\bdegrees?\s+(?:of|celsius|fahrenheit|centigrade)\b",
+    re.IGNORECASE,
+)
+
 
 @lru_cache(maxsize=4096)
 def keyword_pattern(keyword: str) -> re.Pattern[str]:
@@ -43,6 +57,25 @@ def matching_keywords(keywords: list[str], text: str) -> list[str]:
     return [k for k in keywords if matches(k, text)]
 
 
+def distinct_hits(keywords: list[str], text: str) -> set[str]:
+    """Keywords (lower-cased) found in text, not counting a match that is only part
+    of a longer keyword's match – "Electrical Engineering" is one hit, not
+    "electrical" + "electrical engineer*"."""
+    if not text:
+        return set()
+    spans: dict[str, list[tuple[int, int]]] = {}
+    for k in keywords:
+        found = [m.span() for m in keyword_pattern(k).finditer(text)]
+        if found:
+            spans[k.lower()] = found
+    longer = [s for found in spans.values() for s in found]
+
+    def inside(span: tuple[int, int]) -> bool:
+        return any(a <= span[0] and span[1] <= b and b - a > span[1] - span[0] for a, b in longer)
+
+    return {k for k, found in spans.items() if any(not inside(s) for s in found)}
+
+
 def match_subfields(job: Job, cfg: Config) -> list[str]:
     """Return keys of the enabled sub-fields this job belongs to."""
     everything = f"{job.title}\n{job.description}\n{job.category}"
@@ -60,11 +93,12 @@ def match_subfields(job: Job, cfg: Config) -> list[str]:
     # Weaker evidence: description + the site's category label. The category
     # counts as a single hit however many keywords it contains, so a job is
     # never accepted on "Electronics / Electrical" alone.
+    found = distinct_hits(list({k for sf in usable for k in sf.keywords}), job.description)
     desc_hits: set[str] = set()
     category_hit = False
     per_subfield: dict[str, int] = {}
     for sf in usable:
-        d = {k.lower() for k in matching_keywords(sf.keywords, job.description)}
+        d = {k.lower() for k in sf.keywords} & found
         c = bool(matching_keywords(sf.keywords, job.category))
         desc_hits |= d
         category_hit |= c
@@ -99,7 +133,7 @@ def classify_level(job: Job, cfg: Config) -> str | None:
         return title_levels[-1]
 
     # b) "N years of experience" in title / description.
-    years = years_required(f"{job.title}\n{job.description}")
+    years = job.min_years if job.min_years is not None else years_required(f"{job.title}\n{job.description}")
     if years is not None:
         for lv in cfg.levels:
             if lv.covers_years(years):
@@ -109,6 +143,46 @@ def classify_level(job: Job, cfg: Config) -> str | None:
     if job.level_hint and cfg.level(job.level_hint):
         return job.level_hint
     return None
+
+
+def _nvq_level(token: str) -> int:
+    token = token.lower().lstrip("0")
+    return int(token) if token.isdigit() else _ROMAN[token]
+
+
+def _expand_nvq(m: re.Match) -> str:
+    first = _nvq_level(m.group(1))
+    rest = [_nvq_level(t) for t in re.findall(_NVQ_NUM, m.group(2) or "", re.IGNORECASE)]
+    levels = [first, *rest]
+    if len(rest) == 1 and re.search(r"-|–|to", m.group(2)):  # "NVQ 3 - 5" is a range
+        levels = list(range(min(levels), max(levels) + 1))
+    return " " + " ".join(f"nvq level {n}" for n in levels) + " "
+
+
+def qualification_text(text: str) -> str:
+    """Normalise NVQ levels and drop non-qualification uses of "degree"."""
+    return _NVQ_RE.sub(_expand_nvq, _NOT_A_DEGREE.sub(" ", text))
+
+
+def classify_qualifications(job: Job, cfg: Config) -> list[str]:
+    """Qualification levels the advert accepts, e.g. ["degree", "diploma"] for
+    "BSc or HND in Electrical Engineering". Empty when the advert doesn't say."""
+    if not cfg.qualifications:
+        return []
+    text = qualification_text(f"{job.title}\n{job.description}")
+    found = [q.key for q in cfg.qualifications if matching_keywords(q.keywords, text)]
+    if found:
+        return found
+    return [q.key for q in cfg.qualifications if matching_keywords(q.title_hints, job.title)][:1]
+
+
+def qualification_allowed(keys: list[str], cfg: Config) -> bool:
+    """A job passes if it accepts at least one qualification you've ticked."""
+    if not cfg.qualifications:
+        return True
+    if not keys:
+        return cfg.include_unknown_qualification
+    return any((q := cfg.qualification(k)) is not None and q.enabled for k in keys)
 
 
 def is_excluded(job: Job, cfg: Config) -> bool:
@@ -131,7 +205,9 @@ def level_allowed(level: str | None, cfg: Config) -> bool:
 
 
 def select_jobs(jobs: list[Job], cfg: Config) -> list[Job]:
-    """Tag and filter jobs, merging duplicates posted on several sites."""
+    """Tag and filter jobs, merging duplicates posted on several sites.
+
+    Safe to call again after the posting reader has added the full advert text."""
     selected: list[Job] = []
     by_fp: dict[str, Job] = {}
     seen_uids: set[str] = set()
@@ -139,15 +215,21 @@ def select_jobs(jobs: list[Job], cfg: Config) -> list[Job]:
         if job.uid in seen_uids:
             continue
         seen_uids.add(job.uid)
+        if job.preset is None:  # sub-fields a source tagged itself (e.g. a company page set to "power")
+            job.preset = list(job.subfields)
+        job.also_on = []
         if is_excluded(job, cfg):
             continue
-        # A source may pre-tag a job (e.g. a company page set to "power").
-        preset = [k for k in job.subfields if (sf := cfg.subfield(k)) and sf.enabled]
+        preset = [k for k in job.preset if (sf := cfg.subfield(k)) and sf.enabled]
         job.subfields = preset + [k for k in match_subfields(job, cfg) if k not in preset]
         if not job.subfields:
             continue
+        job.min_years = years_required(f"{job.title}\n{job.description}")
         job.level = classify_level(job, cfg)
         if not level_allowed(job.level, cfg):
+            continue
+        job.qualifications = classify_qualifications(job, cfg)
+        if not qualification_allowed(job.qualifications, cfg):
             continue
         first = by_fp.get(job.fingerprint)
         if first is not None:

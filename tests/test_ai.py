@@ -99,3 +99,33 @@ def test_groq_and_custom_endpoints(cfg):
     cfg.ai.models = ["my-model"]
     url, models = ai.endpoint(cfg, {"AI_BASE_URL": "https://llm.example.com/v1"})
     assert url == "https://llm.example.com/v1/chat/completions" and models == ["my-model"]
+
+
+def test_ai_fills_qualification_and_requirements(cfg):
+    job, known = make_jobs(2)
+    known.qualifications = ["degree"]  # found by keywords already: the AI doesn't override it
+    rows = [{"id": job.uid, "score": 8, "level": "entry", "qualification": ["diploma"],
+             "requirements": "HND in Electrical + 1 year", "reason": "ok"},
+            {"id": known.uid, "score": 8, "level": "entry", "qualification": ["diploma"], "reason": "ok"}]
+    ai.review([job, known], cfg, {"AI_API_KEY": "k"}, sleep=lambda s: None, post=lambda *a, **k: reply(rows))
+    assert job.qualifications == ["diploma"] and job.requirements == "HND in Electrical + 1 year"
+    assert ai.is_hidden(job, cfg)  # diploma-only; degree holders don't see it by default
+    assert known.qualifications == ["degree"] and not ai.is_hidden(known, cfg)
+
+
+def test_poster_reader_sends_image_and_respects_budget(cfg):
+    cfg.ai.enabled, cfg.postings.max_ai_reads = True, 2
+    sent = []
+
+    def post(url, json, headers, timeout):
+        sent.append(json["messages"][0]["content"])
+        return FakeResp(body={"choices": [{"message": {"content": "Electrical Engineer\nBSc required"}}]})
+
+    read = ai.poster_reader(cfg, {"AI_API_KEY": "k"}, post=post, sleep=lambda s: None)
+    assert read(b"img", "image/png") == "Electrical Engineer\nBSc required"
+    assert sent[0][1]["image_url"]["url"] == "data:image/png;base64,aW1n"
+    read(b"img", "image/png")
+    assert read(b"img", "image/png") == "" and len(sent) == 2  # only max_ai_reads per run
+    assert ai.poster_reader(cfg, {}) is None  # no key
+    cfg.ai.provider = "groq"
+    assert ai.poster_reader(cfg, {"AI_API_KEY": "k"}) is None  # its models can't see images

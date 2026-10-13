@@ -66,6 +66,12 @@ def group_jobs(jobs: list[Job], cfg: Config, today: date) -> list[tuple[str | No
         labels = {lv.key: lv.label for lv in cfg.levels} | {"": "Level not stated"}
         for j in jobs:
             buckets.setdefault(j.level or "", []).append(j)
+    elif group_by == "qualification":
+        # Highest qualification the advert accepts: "Degree or Diploma" sits under Degree.
+        order = [q.key for q in cfg.qualifications] + [""]
+        labels = {q.key: q.label for q in cfg.qualifications} | {"": "Qualification not stated"}
+        for j in jobs:
+            buckets.setdefault(j.qualifications[0] if j.qualifications else "", []).append(j)
     elif group_by == "subfield":
         order = [sf.key for sf in cfg.subfields] + [""]
         labels = {sf.key: sf.label for sf in cfg.subfields} | {"": "Other"}

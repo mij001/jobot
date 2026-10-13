@@ -19,13 +19,17 @@ on:
         description: "Send every currently open matching job, not just new ones"
         type: boolean
         default: false
+      qualifications:
+        description: "Only these qualifications, comma-separated (blank = use config.yaml). e.g. degree,diploma"
+        required: false
+        default: ""
       dry_run:
         description: "Only print results in the log; don't notify or remember"
         type: boolean
         default: false
 
 permissions:
-  contents: write  # to commit data/seen_jobs.json
+  contents: write  # to commit data/ (sent jobs, statistics, adverts already read)
 
 concurrency:
   group: jobot
@@ -46,6 +50,12 @@ jobs:
       - name: Install
         run: pip install -r requirements.txt
 
+      # Free tools for reading adverts that are poster images (Tesseract OCR) or PDFs.
+      - name: Install OCR tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends tesseract-ocr tesseract-ocr-eng poppler-utils
+
       - name: Find jobs and notify
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -61,12 +71,14 @@ jobs:
           # Manual-run inputs go through env vars, never straight into the script.
           IN_SUBFIELDS: ${{ inputs.subfields }}
           IN_LEVELS: ${{ inputs.levels }}
+          IN_QUALIFICATIONS: ${{ inputs.qualifications }}
           IN_RESEND_ALL: ${{ inputs.resend_all }}
           IN_DRY_RUN: ${{ inputs.dry_run }}
         run: |
           args=()
           [ -n "$IN_SUBFIELDS" ] && args+=(--subfields "$IN_SUBFIELDS")
           [ -n "$IN_LEVELS" ] && args+=(--levels "$IN_LEVELS")
+          [ -n "$IN_QUALIFICATIONS" ] && args+=(--qualifications "$IN_QUALIFICATIONS")
           [ "$IN_RESEND_ALL" = "true" ] && args+=(--all)
           [ "$IN_DRY_RUN" = "true" ] && args+=(--dry-run)
           python -m jobot "${args[@]}"

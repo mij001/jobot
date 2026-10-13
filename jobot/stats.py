@@ -11,22 +11,24 @@ from datetime import date
 from pathlib import Path
 
 from .config import Config
-from .filters import classify_level, is_excluded, level_allowed, match_subfields
+from .filters import (classify_level, classify_qualifications, is_excluded, level_allowed, match_subfields,
+                      qualification_allowed)
 from .models import Job
 from .report import SourceResult
 
 MAX_RUNS = 400
 MAX_LOG_ROWS = 5000
 LOG_FIELDS = ["date", "status", "site", "title", "company", "location", "subfields", "level",
-              "ai_score", "ai_reason", "closing", "url"]
+              "qualification", "ai_score", "ai_reason", "closing", "url"]
 
 
-def open_jobs_by_subfield(jobs: list[Job], cfg: Config) -> tuple[Counter, Counter]:
+def open_jobs_by_subfield(jobs: list[Job], cfg: Config) -> tuple[Counter, Counter, Counter]:
     """How many currently open jobs match each sub-field – switched on or not –
-    and how many matching jobs your experience-level filter drops."""
+    and how many matching jobs your experience-level and qualification filters drop."""
     everything = replace(cfg, subfields=[replace(s, enabled=True) for s in cfg.subfields])
     by_subfield: Counter = Counter()
     level_filtered: Counter = Counter()
+    qual_filtered: Counter = Counter()
     seen: set[str] = set()
     for job in jobs:
         if job.fingerprint in seen or is_excluded(job, cfg):
@@ -40,12 +42,16 @@ def open_jobs_by_subfield(jobs: list[Job], cfg: Config) -> tuple[Counter, Counte
         level = classify_level(job, cfg)
         if on and not level_allowed(level, cfg):
             level_filtered[level or "unknown"] += 1
-    return by_subfield, level_filtered
+        elif on:
+            quals = classify_qualifications(job, cfg)
+            if not qualification_allowed(quals, cfg):
+                qual_filtered[quals[0] if quals else "unknown"] += 1
+    return by_subfield, level_filtered, qual_filtered
 
 
 def run_record(day: date, sources: list[SourceResult], scanned: list[Job], matched: list[Job],
-               new: list[Job], shown: list[Job], cfg: Config, ai_result=None) -> dict:
-    by_subfield, level_filtered = open_jobs_by_subfield(scanned, cfg)
+               new: list[Job], shown: list[Job], cfg: Config, ai_result=None, read_stats=None) -> dict:
+    by_subfield, level_filtered, qual_filtered = open_jobs_by_subfield(scanned, cfg)
     companies = Counter(j.company.strip() for j in matched if j.company.strip())
     record = {
         "date": day.isoformat(),
@@ -59,9 +65,12 @@ def run_record(day: date, sources: list[SourceResult], scanned: list[Job], match
         "sent": len(shown),
         "new_by_subfield": dict(Counter(j.subfields[0] for j in new if j.subfields)),
         "new_by_level": dict(Counter(j.level or "unknown" for j in new)),
+        "new_by_qualification": dict(Counter(j.qualifications[0] if j.qualifications else "unknown" for j in new)),
         "new_by_site": dict(Counter(j.source for j in new)),
         "open_by_subfield": dict(by_subfield),
         "open_level_filtered": dict(level_filtered),
+        "open_qualification_filtered": dict(qual_filtered),
+        "postings": read_stats.as_dict() if read_stats is not None else None,
         "top_companies": companies.most_common(10),
         "ai": None,
     }
@@ -106,6 +115,7 @@ def append_jobs_log(path: str | Path, day: date, new: list[Job], hidden_uids: se
             "location": job.location,
             "subfields": "; ".join(sf.label for k in job.subfields if (sf := cfg.subfield(k))),
             "level": (cfg.level(job.level).label if job.level and cfg.level(job.level) else "not stated"),
+            "qualification": cfg.qualification_label(job.qualifications) or "not stated",
             "ai_score": "" if job.ai_score is None else job.ai_score,
             "ai_reason": job.ai_reason,
             "closing": job.closing,

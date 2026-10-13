@@ -278,6 +278,7 @@
   <nav class="jump" aria-label="Jump to section">
     <a class="chip-btn" href="#sec-stats">Stats</a>
     <a class="chip-btn" href="#sec-levels">Levels</a>
+    <a class="chip-btn" href="#sec-quals">Education</a>
     <a class="chip-btn" href="#sec-subfields">Sub-fields</a>
     <a class="chip-btn" href="#sec-filters">Filters</a>
     <a class="chip-btn" href="#sec-sites">Sites</a>
@@ -321,19 +322,34 @@
           <div class="panel-card" data-chart="sites"><div class="ph"><h3 class="grow">New jobs by site</h3></div><div class="body"></div></div>
           <div class="panel-card" data-chart="levels"><div class="ph"><h3 class="grow">New jobs by level</h3></div><div class="body"></div></div>
         </div>
+        <div class="grid2">
+          <div class="panel-card" data-chart="quals"><div class="ph"><h3 class="grow">New jobs by qualification</h3></div><div class="body"></div></div>
+          <div class="panel-card" data-chart="filteredQuals"><div class="ph"><h3 class="grow">Hidden by your qualification filter</h3></div><div class="body"></div></div>
+        </div>
         <div class="panel-card" data-chart="companies"><div class="ph"><h3 class="grow">Hiring the most (open jobs, latest run)</h3></div><div class="body"></div></div>
         <div class="panel-card"><div class="ph"><h3 class="grow">Recent jobs</h3><span class="hint" id="logCount" style="margin:0"></span></div><div class="joblog" id="joblog"></div></div>
       </div>
     </section>
 
     <section class="card" id="sec-levels">
-      <div class="card-head"><div class="badge" data-icon="school"></div><div>
+      <div class="card-head"><div class="badge" data-icon="tune"></div><div>
         <h2>Experience levels</h2>
         <p>Only jobs at the levels you switch on are sent. A job's level comes from its title, then “N years of experience”, then the job site (and the AI reviewer, if on).</p></div></div>
       <div class="list" id="levels"></div>
       <div class="switch-row" style="padding:16px 4px 0">
         <span class="label">Also send jobs that don't say a level<small>Many ads don't – recommended</small></span>
         <label class="switch"><input type="checkbox" id="includeUnknown"><span class="track"></span><span class="thumb" data-icon="check"></span></label>
+      </div>
+    </section>
+
+    <section class="card" id="sec-quals">
+      <div class="card-head"><div class="badge" data-icon="school"></div><div>
+        <h2>Qualification</h2>
+        <p>The bot reads each advert – text, poster or PDF – and notes what it asks for. A job is sent when it accepts a qualification you switch on, so “Degree or HND” still reaches a degree holder.</p></div></div>
+      <div class="list" id="quals"></div>
+      <div class="switch-row" style="padding:16px 4px 0">
+        <span class="label">Also send jobs that don't say<small>Or whose poster couldn't be read – recommended</small></span>
+        <label class="switch"><input type="checkbox" id="includeUnknownQual"><span class="track"></span><span class="thumb" data-icon="check"></span></label>
       </div>
     </section>
 
@@ -364,13 +380,22 @@
       <div class="card-head"><div class="badge" data-icon="public"></div><div>
         <h2>Job sites</h2><p>Where the bot looks every morning. Tap a site for its options.</p></div></div>
       <div class="list" id="sources"></div>
+      <div class="hint" style="margin-top:24px">Reading the adverts</div>
+      <div class="switch-row"><span class="label">Open each new advert and read it<small>Lists often show only a title – this checks the full ad for your field, experience and qualification</small></span>
+        <label class="switch"><input type="checkbox" id="readPostings"><span class="track"></span><span class="thumb" data-icon="check"></span></label></div>
+      <div class="switch-row"><span class="label">Read poster images<small>Many Sri Lankan ads are just a picture – read with free OCR</small></span>
+        <label class="switch"><input type="checkbox" id="readPosters"><span class="track"></span><span class="thumb" data-icon="check"></span></label></div>
+      <div class="switch-row"><span class="label">Let the AI read posters OCR can't<small>Gemini only · up to <span id="aiReadsOut">5</span> a day from your free quota</small></span>
+        <label class="switch"><input type="checkbox" id="aiVision"><span class="track"></span><span class="thumb" data-icon="check"></span></label></div>
+      <label class="field" style="max-width:260px"><input type="number" id="maxReads" min="0" max="300"><span class="lbl">Adverts opened per run</span></label>
+      <p class="support">Each takes 1–3 seconds; the rest wait for the next run. An advert is only ever read once.</p>
     </section>
 
     <section class="card" id="sec-layout">
       <div class="card-head"><div class="badge" data-icon="sort"></div><div>
         <h2>Message layout</h2><p>How jobs are grouped and ordered in each email or Telegram message.</p></div></div>
       <div class="hint" style="margin-top:0">Group by</div>
-      <div class="seg" id="groupSeg" role="group" aria-label="Group by"></div>
+      <div class="chip-row" id="groupSeg" role="group" aria-label="Group by"></div>
       <div class="hint" style="margin-top:20px">Order by</div>
       <div class="chip-row" id="orderChips" role="group" aria-label="Order by"></div>
     </section>
@@ -441,8 +466,10 @@ const SOURCE_INFO = {
   rss: ["RSS feeds", "Gazette.lk government vacancies, plus any feed you add"],
   company_pages: ["Company careers pages", "Employers' own pages – CEB, SLT-Mobitel and any you add"],
   linkedin: ["LinkedIn", "Public search – LinkedIn limits how much GitHub's servers can see"],
+  itpro: ["ITPro.lk", "IT, hardware & networking and internship ads"],
+  techjobs: ["TechJobs.lk", "Engineering and technical vacancies"],
 };
-const GROUP_BY = { level: "Level", subfield: "Sub-field", site: "Site", none: "None" };
+const GROUP_BY = { level: "Level", qualification: "Education", subfield: "Sub-field", site: "Site", none: "None" };
 const ORDER_BY = { best_match: "Best match", newest: "Newest", closing_soon: "Closing soon", company: "Company", title: "Title" };
 const SEEDS = ["#1b6ef3", "#00897b", "#2e7d32", "#7cb342", "#f9a825", "#ef6c00", "#d32f2f", "#d81b60", "#6750a4"];
 const ROLES = ["primary", "onPrimary", "primaryContainer", "onPrimaryContainer", "secondary", "secondaryContainer",
@@ -640,6 +667,21 @@ function render() {
   }
   $("includeUnknown").checked = cfg.include_unknown_level !== false;
 
+  // qualifications
+  const quals = $("quals"); quals.replaceChildren();
+  for (const [key, q] of Object.entries(cfg.qualifications || {})) {
+    const kw = chipInput(q.keywords, "Add word…", `${q.label || key} keywords`);
+    const hints = chipInput(q.title_hints, "e.g. technical officer*", `${q.label || key} title hints`);
+    const panel = el("div", {}, el("div", { class: "hint" }, "Words in the advert that mean this qualification"), kw,
+      el("div", { class: "hint", style: "margin-top:16px" }, "If the advert doesn't say, job titles that usually need it"), hints,
+      el("p", { class: "support" }, "NVQ levels are matched however they're written (“NVQ L5”, “NVQ Level 05”) as nvq level 5."));
+    const row = listItem({ title: q.label || key, sub: `${(q.keywords || []).length} keywords`, on: q.enabled !== false, panel });
+    row.item.dataset.qual = key;
+    row.item._get = () => ({ enabled: row.input.checked, keywords: kw._values, title_hints: hints._values });
+    quals.append(row.item);
+  }
+  $("includeUnknownQual").checked = cfg.include_unknown_qualification !== false;
+
   // sub-fields
   const subs = $("subfields"); subs.replaceChildren();
   for (const [key, sf] of Object.entries(cfg.subfields || {})) subs.append(subfieldRow(key, sf));
@@ -653,10 +695,16 @@ function render() {
   // sites
   const srcs = $("sources"); srcs.replaceChildren();
   for (const [key, opts] of Object.entries(cfg.sources || {})) srcs.append(sourceRow(key, opts));
+  const reading = cfg.postings || {};
+  $("readPostings").checked = reading.enabled !== false;
+  $("readPosters").checked = reading.read_posters !== false;
+  $("aiVision").checked = reading.ai_vision !== false;
+  $("maxReads").value = reading.max_per_run ?? 60;
+  $("aiReadsOut").textContent = reading.max_ai_reads ?? 5;
 
   // layout
   const notify = cfg.notify || {};
-  segmented($("groupSeg"), GROUP_BY, notify.group_by || "level");
+  segmented($("groupSeg"), GROUP_BY, notify.group_by || "level", "chip-btn");
   segmented($("orderChips"), ORDER_BY, notify.order_by || "best_match", "chip-btn");
 
   // AI
@@ -764,11 +812,14 @@ function subItem(fields) {
 }
 
 // ---------------------------------------------------------------- form -> YAML
+// JSON with object keys sorted, so {url, name} and {name, url} compare equal.
+const canon = (v) => JSON.stringify(v, (k, x) =>
+  x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : x);
 function setIfChanged(path, value) {
   const doc = state.doc;
   const old = doc.getIn(path, true);
   const oldJS = old && typeof old.toJSON === "function" ? old.toJSON() : old;
-  if (JSON.stringify(oldJS ?? null) === JSON.stringify(value ?? null)) return;
+  if (canon(oldJS ?? null) === canon(value ?? null)) return;
   if (isSeq(old) && Array.isArray(value) && value.every((v) => typeof v !== "object")) {
     old.items = value.map((v) => doc.createNode(v));  // keep the list node so its comments survive
   } else {
@@ -792,6 +843,13 @@ function applyForm() {
     setOrDelete(["experience_levels", key, "max_years"], num(v.max));
   }
   setIfChanged(["include_unknown_level"], $("includeUnknown").checked);
+  for (const item of $("quals").children) {
+    const key = item.dataset.qual, v = item._get();
+    setIfChanged(["qualifications", key, "enabled"], v.enabled);
+    setIfChanged(["qualifications", key, "keywords"], v.keywords);
+    setOrDelete(["qualifications", key, "title_hints"], v.title_hints);
+  }
+  if ($("quals").children.length) setIfChanged(["include_unknown_qualification"], $("includeUnknownQual").checked);
 
   const present = new Set();
   for (const item of $("subfields").children) {
@@ -815,6 +873,10 @@ function applyForm() {
   for (const item of $("sources").children) {
     for (const [k, v] of Object.entries(item._get())) setIfChanged(["sources", item.dataset.source, k], v);
   }
+  setIfChanged(["postings", "enabled"], $("readPostings").checked);
+  setIfChanged(["postings", "read_posters"], $("readPosters").checked);
+  setIfChanged(["postings", "ai_vision"], $("aiVision").checked);
+  setIfChanged(["postings", "max_per_run"], Math.max(0, Number($("maxReads").value) || 0));
   setIfChanged(["notify", "group_by"], $("groupSeg")._get());
   setIfChanged(["notify", "order_by"], $("orderChips")._get());
   setIfChanged(["notify", "send_when_empty"], $("sendEmpty").checked);
@@ -833,6 +895,9 @@ function validate() {
   if (!anySub) return "Switch on at least one sub-field that has keywords.";
   const anyLevel = Object.values(cfg.experience_levels || {}).some((l) => l.enabled !== false);
   if (!anyLevel && cfg.include_unknown_level === false) return "Switch on at least one experience level.";
+  const quals = Object.values(cfg.qualifications || {});
+  if (quals.length && !quals.some((q) => q.enabled !== false) && cfg.include_unknown_qualification === false)
+    return "Switch on at least one qualification.";
   if (!Object.values(cfg.sources || {}).some((s) => s.enabled !== false)) return "Switch on at least one job site.";
   return null;
 }
@@ -956,6 +1021,8 @@ function renderStats() {
     tile("New matching jobs", total("new"), `last ${stats.days} days`),
     tile("Sent to you", total("sent"), `last ${stats.days} days`),
     tile("Hidden by AI", hidden, "poor fits"),
+    tile("Adverts read", runs.reduce((a, r) => a + (r.postings?.opened || 0), 0),
+      `${fmt(runs.reduce((a, r) => a + (r.postings?.posters || 0), 0))} posters via OCR`),
     tile("Open matches now", latest.matched || 0, `of ${fmt(latest.scanned || 0)} jobs scanned`));
   renderSuggestions(); renderCharts(); renderLog();
 }
@@ -1059,6 +1126,12 @@ function renderCharts() {
   const levels = cfg.experience_levels || {}, lv = sumBy(runs, "new_by_level");
   barList("levels", [...Object.keys(levels), "unknown"].filter((k) => lv[k]).map((k) => ({ label: levels[k]?.label || "Not stated", value: lv[k] })));
   barList("companies", (latest.top_companies || []).slice(0, 8).map(([c, n]) => ({ label: c, value: n })));
+  const qs = cfg.qualifications || {}, qn = sumBy(runs, "new_by_qualification");
+  const qLabel = (k) => (qs[k]?.label || "Not stated").split(" (")[0];
+  barList("quals", [...Object.keys(qs), "unknown"].filter((k) => qn[k]).map((k) => ({ label: qLabel(k), value: qn[k], extra: qs[k]?.label })));
+  const qf = latest.open_qualification_filtered || {};
+  barList("filteredQuals", [...Object.keys(qs), "unknown"].filter((k) => qf[k]).map((k) => ({
+    label: qLabel(k), value: qf[k], muted: true, extra: "open jobs in your sub-fields, latest run" })));
 }
 function renderSuggestions() {
   const box = $("suggestions"); box.replaceChildren();
@@ -1086,6 +1159,7 @@ function actionTarget(a) {
   if (a.type === "enable_subfield") return sw(`#subfields [data-sub="${a.key}"] .switch input`, true);
   if (a.type === "disable_subfield") return sw(`#subfields [data-sub="${a.key}"] .switch input`, false);
   if (a.type === "enable_level") return sw(`#levels [data-level="${a.key}"] .switch input`, true);
+  if (a.type === "enable_qualification") return sw(`#quals [data-qual="${a.key}"] .switch input`, true);
   if (a.type === "set_ai_min_score") {
     const r = $("aiMin");
     return { done: () => Number(r.value) <= a.value,
@@ -1102,7 +1176,8 @@ function renderLog() {
     const score = el("span", { class: "score" + (hidden || !r.ai_score ? " dim" : ""), title: hidden ? "Hidden by the AI reviewer" : "AI fit score" },
       r.ai_score ? `${r.ai_score}/10` : "–");
     const link = el("a", { href: r.url, target: "_blank", rel: "noopener" }, r.title);
-    const meta = [r.company, r.site, r.date, hidden ? "hidden by AI" : ""].filter(Boolean).join(" · ");
+    const qual = r.qualification && r.qualification !== "not stated" ? r.qualification : "";
+    const meta = [r.company, qual, r.site, r.date, hidden ? "hidden by AI" : ""].filter(Boolean).join(" · ");
     box.append(el("div", { class: "row" }, el("div", { class: "main" }, link, el("div", { class: "meta" }, meta)), score));
   }
 }

@@ -107,11 +107,11 @@ def test_unknown_level_toggle(cfg):
 
 
 def test_overseas_toggle(cfg):
-    j = job("Electrical Technicians (Kuwait)")
+    j = job("Electrical Engineers (Kuwait)")
     assert select_jobs([j], cfg)
     cfg.include_overseas = False
-    assert select_jobs([job("Electrical Technicians (Kuwait)")], cfg) == []
-    assert select_jobs([job("Electrical Technician", location="Colombo")], cfg)
+    assert select_jobs([job("Electrical Engineers (Kuwait)")], cfg) == []
+    assert select_jobs([job("Electrical Engineer", location="Colombo")], cfg)
 
 
 def test_location_filter(cfg):
@@ -119,3 +119,12 @@ def test_location_filter(cfg):
     jobs = [job("Electrical Engineer", location="Kandy", sid="a"),
             job("Electronic Engineer", location="Colombo 03", sid="b")]
     assert [j.title for j in select_jobs(jobs, cfg)] == ["Electronic Engineer"]
+
+
+def test_overlapping_keywords_count_once(cfg):
+    from jobot.filters import distinct_hits
+    text = "Degree in Electrical Engineering. Knowledge of electrical systems and PLC."
+    assert distinct_hits(["electrical", "electrical engineer*", "plc"], text) == {"electrical", "electrical engineer*", "plc"}
+    # Only "Electrical Engineering" -> one hit, so a vague title isn't matched on it alone.
+    assert distinct_hits(["electrical", "electrical engineer*"], "Degree in Electrical Engineering") == {"electrical engineer*"}
+    assert match_subfields(job("Hydrogeological Engineer", "Degree or Diploma in Mechanical / Electrical Engineering"), cfg) == []

@@ -5,6 +5,8 @@ from datetime import date
 from pathlib import Path
 
 import pytest
+import requests
+import yaml
 
 from jobot import main as jobot_main
 from jobot.config import ConfigError
@@ -90,13 +92,25 @@ def fake_env(monkeypatch, tmp_path):
 
     monkeypatch.setattr(jobot_main, "SOURCES", {"fake": FakeSource, "broken": BrokenSource})
     config = tmp_path / "config.yaml"
-    config.write_text(
-        (Path(__file__).parent / "fixtures" / "default_config.yaml").read_text(encoding="utf-8").split("\nsources:")[0]
-        + "\nsources:\n  fake: {}\n  broken: {}\n",
-        encoding="utf-8",
-    )
+    raw = yaml.safe_load((Path(__file__).parent / "fixtures" / "default_config.yaml").read_text(encoding="utf-8"))
+    raw["sources"] = {"fake": {}, "broken": {}}
+    del raw["ai"], raw["notify"]  # defaults: no AI, plain messages
+    config.write_text(yaml.safe_dump(raw, sort_keys=False, allow_unicode=True), encoding="utf-8")
     monkeypatch.setattr(jobot_main.notifiers, "configured_channels", lambda env: {"fake": FakeChannel})
+    monkeypatch.setattr(jobot_main.postings, "read_posting", fake_read_posting)
+    ADVERTS.clear()
     return config, tmp_path / "seen.json", sent
+
+
+ADVERTS: dict[str, str] = {}  # url -> advert text "read" from the posting
+OPENED: list[str] = []
+
+
+def fake_read_posting(http, url, read_posters=True, vision=None):
+    OPENED.append(url)
+    if url not in ADVERTS:
+        raise requests.HTTPError(response=type("R", (), {"status_code": 404})())
+    return jobot_main.postings.Posting(text=ADVERTS[url], via=["poster"])
 
 
 def test_run_sends_new_jobs_once(fake_env):
@@ -178,3 +192,57 @@ def test_run_logs_statistics(fake_env):
     log = (state.parent / "jobs_log.csv").read_text().splitlines()
     assert log[0].startswith("date,status,site,title") and "Embedded Engineer" in log[1] and len(log) == 2
     assert "jobs scanned" in sent[0].email_text()
+
+
+class PosterSource:
+    NAME = "PosterSite"
+
+    @staticmethod
+    def fetch(http, opts, cfg):
+        return [  # list pages that only give a title – the advert is a poster
+            Job(source="PosterSite", source_id="1", title="Project Engineer", url="https://p/1"),
+            Job(source="PosterSite", source_id="2", title="Electrical Engineer", url="https://p/2"),
+            Job(source="PosterSite", source_id="3", title="Civil Engineer", url="https://p/3"),
+        ]
+
+
+def test_run_reads_adverts_and_filters_by_qualification(fake_env, monkeypatch):
+    config, state, sent = fake_env
+    monkeypatch.setattr(jobot_main, "SOURCES", {"fake": PosterSource})
+    config.write_text(config.read_text(encoding="utf-8").replace("broken: {}", ""), encoding="utf-8")
+    ADVERTS.update({
+        "https://p/1": "Project Engineer\nBSc in Electrical Engineering\nPLC, SCADA and switchgear\n"
+                       "Minimum 2 years experience\nE-mail CV to jobs@acme.lk",
+        "https://p/2": "Electrical Engineer\nNDT / HND in Electrical Engineering",
+    })
+    OPENED.clear()
+    args = ["--config", str(config), "--state", str(state)]
+    assert jobot_main.run(args) == 0
+    # Civil Engineer isn't opened at all; the diploma-only advert is dropped for a degree holder.
+    assert OPENED == ["https://p/2", "https://p/1"]
+    [job] = sent[0].jobs
+    assert job.title == "Project Engineer" and job.qualifications == ["degree"] and job.min_years == 2
+    assert job.contact == "jobs@acme.lk"
+    text = sent[0].email_text()
+    assert "Needs: Degree · 2+ yrs experience · read from poster" in text
+    assert "Adverts read: 2 opened (2 posters via OCR)" in text
+    cache = json.loads((state.parent / "postings_cache.json").read_text())
+    assert set(cache) == {"PosterSite:1", "PosterSite:2"}
+    stats = json.loads((state.parent / "stats.json").read_text())["runs"][-1]
+    assert stats["postings"]["opened"] == 2 and stats["new_by_qualification"] == {"degree": 1}
+
+    # Next day: adverts come from the cache; the diploma job is still filtered, not re-sent.
+    OPENED.clear()
+    assert jobot_main.run(args) == 0
+    assert OPENED == [] and sent[1].jobs == []
+
+    # Tick "Diploma" and the HND job shows up (it was never marked as sent).
+    assert jobot_main.run([*args, "--qualifications", "degree,diploma"]) == 0
+    assert [j.title for j in sent[2].jobs] == ["Electrical Engineer"] and OPENED == []
+
+
+def test_no_read_flag_skips_postings(fake_env):
+    config, state, sent = fake_env
+    OPENED.clear()
+    jobot_main.run(["--config", str(config), "--state", str(state), "--no-read"])
+    assert OPENED == [] and not (state.parent / "postings_cache.json").exists()

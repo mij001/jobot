@@ -16,10 +16,12 @@ def job(title, sid=None, **kw):
 def test_open_jobs_count_switched_off_subfields(cfg):
     cfg.only_subfields(["electronics"])  # MEP & lifts switched off
     jobs = [job("MEP Engineer"), job("Lift Technician"), job("Senior Embedded Engineer"),
-            job("Embedded Engineer"), job("Accountant")]
-    by_sub, level_filtered = stats.open_jobs_by_subfield(jobs, cfg)
-    assert by_sub["building_services"] == 1 and by_sub["lifts"] == 1 and by_sub["electronics"] == 2
+            job("Embedded Engineer"), job("Accountant"),
+            job("Embedded Systems Technical Officer", description="NVQ Level 5 or HND in Electronics")]
+    by_sub, level_filtered, qual_filtered = stats.open_jobs_by_subfield(jobs, cfg)
+    assert by_sub["building_services"] == 1 and by_sub["lifts"] == 1 and by_sub["electronics"] == 3
     assert dict(level_filtered) == {"senior": 1}  # matches an ON sub-field but senior is off
+    assert dict(qual_filtered) == {"diploma": 1}  # ... and a diploma-only advert (degree only by default)
 
 
 def test_run_record_and_store(tmp_path, cfg):

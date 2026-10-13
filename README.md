@@ -19,9 +19,17 @@ Engineering** vacancies and sends the new ones to your **Telegram** and/or
 | Company careers pages | [CEB](https://www.ceb.lk/careers/en), [SLT-Mobitel](https://careers.slt.lk/) – add any employer's page |
 | [LinkedIn](https://www.linkedin.com/jobs) | public job search for Sri Lanka, last 7 days (partly rate-limited) |
 
-Each job is tagged with an **EEE sub-field** and an **experience level**
-(Internship, Entry, Mid, Senior, Management), and you choose which ones you
-want. Sub-fields included out of the box: Power & Energy · Renewable/Solar ·
+jobot **opens each new advert and reads it** – including the many Sri
+Lankan adverts that are only a **poster image** (read with free OCR) or a
+**PDF** – so a job whose list entry says nothing but "Project Engineer" is
+still checked against what the advert actually asks for.
+
+Each job is tagged with an **EEE sub-field**, an **experience level**
+(Internship, Entry, Mid, Senior, Management) and the **qualification** the
+advert asks for (**Degree**, **Diploma** – HND/NDT/NVQ 5–6, **Vocational** –
+NVQ 3–4, or **School** – O/L, A/L), and you choose which ones you want. By
+default only degree-level jobs are sent; "Degree or HND" adverts count as
+degree level too. Sub-fields included out of the box: Power & Energy · Renewable/Solar ·
 Building Services/MEP · Automation & Control · Electronics/Embedded ·
 Telecom · Maintenance · General Electrical · Marine/ETO · Aviation/Avionics ·
 Biomedical · Electric Vehicles & Batteries · Data Centre & Critical Power ·
@@ -53,7 +61,10 @@ A message looks like this:
 Graduate / Electrical Engineer - Power Systems & Grid Studies
 🏢 Example Energy (Pvt) Ltd · Colombo
 🎯 Power & Energy, General Electrical / Electronic
+🎓 Degree · 1+ yrs experience · read from poster
+📋 BSc in Electrical Engineering · Minimum 1 year experience in power system studies
 ⏳ Closes 2026-10-26
+📧 careers@example.lk
 🔗 topjobs.lk | XpressJobs
 ...
 ```
@@ -201,11 +212,67 @@ A job's level comes from, in order:
 Many ads don't state a level. `include_unknown_level` decides whether you
 still get those.
 
+### Qualification (degree / diploma)
+
+```yaml
+qualifications:
+  degree:     { enabled: true,  keywords: [degree, bsc*, b.sc*, beng, bachelor*, graduate*, nvq level 7, ...] }
+  diploma:    { enabled: false, keywords: [diploma*, hnd*, ndt, hnde, nvq level 5, nvq level 6, ...],
+                title_hints: [technical officer*, engineering assistant*, ...] }
+  vocational: { enabled: false, keywords: [nvq level 3, nvq level 4, trade test*, ...],
+                title_hints: [technician*, electrician*, ...] }
+  school:     { enabled: false, keywords: [o/l, a/l, g.c.e*, ...] }
+include_unknown_qualification: true   # adverts that don't say, or couldn't be read
+```
+
+jobot notes **every** qualification an advert accepts, and sends it if any
+of them is switched on – so "BSc **or** HND in Electrical Engineering" reaches
+a degree holder, while "NDT/HND only" adverts don't. NVQ levels are recognised
+however they're written ("NVQ L5", "NVQ Level 05", "NVQ 5/6"). `title_hints`
+are used only when the advert itself doesn't say (an unreadable "Technical
+Officer" poster is almost always diploma level). Jobs hidden by this filter
+aren't marked as sent, so switching on *Diploma* later shows the ones still
+open.
+
+### Reading the adverts
+
+```yaml
+postings:
+  enabled: true
+  max_per_run: 60      # new advert pages opened per run (1–3 s each)
+  read_posters: true   # OCR poster images (Tesseract)
+  ai_vision: true      # let the AI read posters OCR can't (Gemini only)
+  max_ai_reads: 5
+  skip_titles: [civil, mechanical, software, ...]   # "maybe" ads not worth opening
+```
+
+jobot opens the page of every **new** job that matched, plus "maybe" jobs –
+a technical title (one of `description_match_titles`) with little or no text
+on the list page. From each advert it takes the text (topjobs, ikman,
+LankaJobs, ITPro, TechJobs, Gazette.lk and LinkedIn have their own readers;
+other sites use the page's main content), runs **Tesseract OCR** on poster
+images when there's no text, and reads the English **PDF** of Gazette.lk
+notices. It then pulls out:
+
+* the **qualification** and **years of experience** asked for (shown as 🎓),
+* the lines of the advert that say so (📋), the **e-mail** to apply to (📧),
+  and the **closing date** when the site didn't give one.
+
+The full text then goes through the sub-field, experience and qualification
+filters, and to the AI reviewer (which also sums up the requirements). Each
+advert is read once and remembered in `data/postings_cache.json`; if there
+are more than `max_per_run` (e.g. on the very first run), the rest are read
+on the next runs. The GitHub workflow installs Tesseract and poppler-utils
+itself; on your own computer install them with
+`sudo apt install tesseract-ocr poppler-utils` (Linux) or
+`brew install tesseract poppler` (macOS) – without them jobot still reads
+text adverts and skips posters.
+
 ### Message layout
 
 ```yaml
 notify:
-  group_by: level        # level | subfield | site | none
+  group_by: level        # level | qualification | subfield | site | none
   order_by: best_match   # best_match | newest | closing_soon | company | title
 ```
 
@@ -216,15 +283,16 @@ layout with `python -m jobot --dry-run --group-by site --order-by closing_soon`.
 
 Each run appends a record to `data/stats.json`: jobs scanned per site (or
 why a site failed / was skipped), open matches, new jobs, jobs sent, jobs
-the AI hid, new jobs by sub-field / level / site, **open jobs per sub-field
-including switched-off ones**, how many matches your level filter drops, and
-the companies hiring most. Every new job goes into `data/jobs_log.csv`
-(date, sent or hidden by AI, site, title, company, sub-fields, level, AI
-score and reason, closing date, link).
+the AI hid, new jobs by sub-field / level / qualification / site, **open
+jobs per sub-field including switched-off ones**, how many matches your
+level and qualification filters drop, how many adverts were read (and how
+many were posters), and the companies hiring most. Every new job goes into
+`data/jobs_log.csv` (date, sent or hidden by AI, site, title, company,
+sub-fields, level, qualification, AI score and reason, closing date, link).
 
 From that history jobot suggests, for example:
 
-* switching on a sub-field or level that has many open jobs right now,
+* switching on a sub-field, level or qualification that has many open jobs right now,
 * switching off a sub-field that hasn't matched anything in 30 days,
 * a site that keeps failing,
 * lowering the AI cut-off when it hides most jobs,
@@ -269,6 +337,8 @@ python -m jobot --list                       # show sub-fields, levels, sites
 python -m jobot --dry-run                    # print today's new jobs, send nothing
 python -m jobot --dry-run --all --levels internship,entry --subfields electronics,automation
 python -m jobot --dry-run --no-ai             # skip the AI reviewer
+python -m jobot --dry-run --qualifications degree,diploma
+python -m jobot --dry-run --no-read           # don't open the adverts (faster)
 ```
 
 With `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` (or the `SMTP_*` variables) set,
@@ -294,7 +364,12 @@ Tests: `pip install -r requirements-dev.txt && python -m pytest`
 * If a site changes its layout, that site shows as *failed* in the footer
   while the rest keep working. A run where *every* site fails is marked
   failed in GitHub Actions, and GitHub e-mails you about it.
-* `data/seen_jobs.json` is the bot's memory of what it already sent. The
-  workflow commits it after each run. Delete it to start fresh.
+* `data/seen_jobs.json` is the bot's memory of what it already sent, and
+  `data/postings_cache.json` of the adverts it already read. The workflow
+  commits both after each run. Delete them to start fresh.
+* OCR isn't perfect: stylised posters can come out garbled. Those adverts
+  are kept as "qualification not stated" (unless you switch that off), and
+  with the AI reviewer on, up to `postings.max_ai_reads` posters a day are
+  read by the AI instead.
 * GitHub pauses scheduled workflows in repositories with no activity for 60
   days. If that happens, re-enable it in the Actions tab.

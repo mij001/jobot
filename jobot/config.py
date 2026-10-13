@@ -24,6 +24,7 @@ WEEKLY = {d: d.title() for d in
           ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "daily", "off")}
 GROUP_BY = {
     "level": "Experience level",
+    "qualification": "Qualification (degree / diploma)",
     "subfield": "Sub-field",
     "site": "Job site",
     "none": "No grouping",
@@ -57,6 +58,33 @@ class Level:
 
 
 @dataclass
+class Qualification:
+    key: str
+    label: str
+    keywords: list[str]
+    enabled: bool = True
+    # Used only when the advert itself names no qualification, e.g. a
+    # "Technical Officer" poster that couldn't be read is almost always diploma level.
+    title_hints: list[str] = field(default_factory=list)
+
+    @property
+    def short(self) -> str:
+        """"Degree (BSc / BEng / NVQ 7)" -> "Degree"."""
+        return self.label.split(" (")[0].strip() or self.key
+
+
+@dataclass
+class PostingsConfig:
+    """Opening each job's own page to read the full advert (text, poster or PDF)."""
+    enabled: bool = True
+    max_per_run: int = 60  # pages opened per run; already-read adverts are cached
+    read_posters: bool = True  # OCR poster images (Tesseract)
+    ai_vision: bool = True  # let the AI read posters OCR can't
+    max_ai_reads: int = 5
+    skip_titles: list[str] = field(default_factory=list)  # don't open these "maybe" ads
+
+
+@dataclass
 class AIConfig:
     enabled: bool = False
     provider: str = "gemini"
@@ -79,6 +107,9 @@ class Config:
     include_overseas: bool = True
     overseas_keywords: list[str] = field(default_factory=list)
     include_unknown_level: bool = True
+    qualifications: list[Qualification] = field(default_factory=list)
+    include_unknown_qualification: bool = True
+    postings: PostingsConfig = field(default_factory=PostingsConfig)
     sources: dict[str, dict[str, Any]] = field(default_factory=dict)
     send_when_empty: bool = True
     remember_days: int = 60
@@ -96,8 +127,20 @@ class Config:
     def enabled_levels(self) -> list[Level]:
         return [lv for lv in self.levels if lv.enabled]
 
+    @property
+    def enabled_qualifications(self) -> list[Qualification]:
+        return [q for q in self.qualifications if q.enabled]
+
     def level(self, key: str | None) -> Level | None:
         return next((lv for lv in self.levels if lv.key == key), None)
+
+    def qualification(self, key: str | None) -> Qualification | None:
+        return next((q for q in self.qualifications if q.key == key), None)
+
+    def qualification_label(self, keys: list[str]) -> str:
+        """["degree", "diploma"] -> "Degree or Diploma"; three -> "Degree, Diploma or Vocational"."""
+        names = [q.short for k in keys if (q := self.qualification(k))]
+        return " or ".join(filter(None, [", ".join(names[:-1]), names[-1] if names else ""]))
 
     def subfield(self, key: str) -> Subfield | None:
         return next((s for s in self.subfields if s.key == key), None)
@@ -112,6 +155,9 @@ class Config:
 
     def only_levels(self, keys: list[str]) -> None:
         self._only(self.levels, keys, "experience level")
+
+    def only_qualifications(self, keys: list[str]) -> None:
+        self._only(self.qualifications, keys, "qualification")
 
     def only_sources(self, keys: list[str]) -> None:
         unknown = set(keys) - set(self.sources)
@@ -178,6 +224,17 @@ def parse_config(raw: dict[str, Any]) -> Config:
             max_years=_opt_int(body.get("max_years"), f"experience_levels.{key}.max_years"),
         ))
 
+    qualifications = []
+    for key, body in (raw.get("qualifications") or {}).items():
+        body = body or {}
+        qualifications.append(Qualification(
+            key=str(key),
+            label=str(body.get("label") or key),
+            keywords=_str_list(body.get("keywords"), f"qualifications.{key}.keywords"),
+            enabled=bool(body.get("enabled", True)),
+            title_hints=_str_list(body.get("title_hints"), f"qualifications.{key}.title_hints"),
+        ))
+
     notify = raw.get("notify") or {}
     return Config(
         subfields=subfields,
@@ -190,6 +247,9 @@ def parse_config(raw: dict[str, Any]) -> Config:
         include_overseas=bool(raw.get("include_overseas", True)),
         overseas_keywords=_str_list(raw.get("overseas_keywords"), "overseas_keywords"),
         include_unknown_level=bool(raw.get("include_unknown_level", True)),
+        qualifications=qualifications,
+        include_unknown_qualification=bool(raw.get("include_unknown_qualification", True)),
+        postings=_parse_postings(raw.get("postings") or {}),
         sources={str(k): dict(v or {}) for k, v in (raw.get("sources") or {}).items()},
         send_when_empty=bool(notify.get("send_when_empty", True)),
         remember_days=int(notify.get("remember_days", 60)),
@@ -206,6 +266,19 @@ def _choice(value: Any, options: dict[str, str], where: str) -> str:
     if value not in options:
         raise ConfigError(f"{where} must be one of: {', '.join(options)}")
     return value
+
+
+def _parse_postings(body: dict[str, Any]) -> PostingsConfig:
+    if not isinstance(body, dict):
+        raise ConfigError("postings must be a mapping")
+    return PostingsConfig(
+        enabled=bool(body.get("enabled", True)),
+        max_per_run=_opt_int(body.get("max_per_run", 60), "postings.max_per_run") or 0,
+        read_posters=bool(body.get("read_posters", True)),
+        ai_vision=bool(body.get("ai_vision", True)),
+        max_ai_reads=_opt_int(body.get("max_ai_reads", 5), "postings.max_ai_reads") or 0,
+        skip_titles=_str_list(body.get("skip_titles"), "postings.skip_titles"),
+    )
 
 
 def _parse_ai(body: dict[str, Any]) -> AIConfig:

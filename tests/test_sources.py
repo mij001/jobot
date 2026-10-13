@@ -170,6 +170,7 @@ def test_company_page_subfield_survives_filtering(cfg, fixture_text):
     from jobot.filters import select_jobs
     from jobot.sources import company_pages
     page = {"name": "SLT-Mobitel", "url": "https://careers.slt.lk/", "subfield": "telecom"}
+    cfg.only_qualifications([q.key for q in cfg.qualifications])  # technician = vocational, off by default
     picked = select_jobs(company_pages.parse(fixture_text("slt_careers.html"), page), cfg)
     assert picked[0].title == "TECHNICIAN (OCT 2026)" and picked[0].subfields == ["telecom"]
     cfg.only_subfields(["power"])  # telecom switched off -> plain technician link no longer matches

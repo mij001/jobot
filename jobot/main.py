@@ -9,7 +9,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import ai, notifiers, stats, suggestions
+from . import ai, notifiers, postings, stats, suggestions
 from .config import GROUP_BY, ORDER_BY, Config, ConfigError, load_config
 from .filters import select_jobs
 from .http import Http
@@ -37,6 +37,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--subfields", help="only these sub-fields this run, e.g. power,electronics")
     p.add_argument("--levels", help="only these experience levels this run, e.g. internship,entry")
     p.add_argument("--sources", help="only these sites this run, e.g. topjobs,ikman")
+    p.add_argument("--qualifications", help="only these qualifications this run, e.g. degree,diploma")
     unknown = p.add_mutually_exclusive_group()
     unknown.add_argument("--include-unknown-level", dest="include_unknown", action="store_true",
                          default=None, help="keep jobs whose level can't be determined")
@@ -49,6 +50,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--order-by", choices=list(ORDER_BY), help="how to sort jobs in the message")
     p.add_argument("--group-by", choices=list(GROUP_BY), help="how to group jobs in the message")
     p.add_argument("--no-ai", action="store_true", help="skip the AI review step this run")
+    p.add_argument("--no-read", action="store_true",
+                   help="don't open the job adverts themselves (posters, PDFs) this run")
     p.add_argument("--list", action="store_true", help="show sub-fields, levels and sources, then exit")
     p.add_argument("-v", "--verbose", action="store_true")
     return p
@@ -61,6 +64,8 @@ def apply_overrides(cfg: Config, args: argparse.Namespace) -> None:
         cfg.only_levels(levels)
     if sources := _csv(args.sources):
         cfg.only_sources(sources)
+    if qualifications := _csv(args.qualifications):
+        cfg.only_qualifications(qualifications)
     if args.include_unknown is not None:
         cfg.include_unknown_level = args.include_unknown
     if args.order_by:
@@ -79,6 +84,10 @@ def print_options(cfg: Config) -> None:
     for lv in cfg.levels:
         print(f"  {mark(lv.enabled)} {lv.key:<18} {lv.label}")
     print(f"  {mark(cfg.include_unknown_level)} {'(unknown level)':<18} jobs that don't state a level")
+    print("Qualifications (--qualifications):")
+    for q in cfg.qualifications:
+        print(f"  {mark(q.enabled)} {q.key:<18} {q.label}")
+    print(f"  {mark(cfg.include_unknown_qualification)} {'(not stated)':<18} adverts that don't say")
     print("Sources (--sources):")
     for key, opts in cfg.sources.items():
         name = SOURCES[key].NAME if key in SOURCES else "(not supported)"
@@ -150,14 +159,33 @@ def run(argv: list[str] | None = None) -> int:
     log.info("Sub-fields: %s", ", ".join(s.key for s in cfg.enabled_subfields) or "(none)")
     log.info("Levels:     %s%s", ", ".join(lv.key for lv in cfg.enabled_levels) or "(none)",
              " + unknown" if cfg.include_unknown_level else "")
+    if cfg.qualifications:
+        log.info("Education:  %s%s", ", ".join(q.key for q in cfg.enabled_qualifications) or "(none)",
+                 " + not stated" if cfg.include_unknown_qualification else "")
+
+    env = dict(os.environ)
+    today = datetime.now(SRI_LANKA_TZ).date()
+    data_dir = Path(args.state).parent
 
     all_jobs, results = scrape(cfg)
     matched = select_jobs(all_jobs, cfg)
     store = SeenStore(args.state)
+
+    # Open the adverts themselves (text, posters, PDFs), then filter again with what they say.
+    read_stats = None
+    if cfg.postings.enabled and not args.no_read:
+        cache = postings.PostingCache(data_dir / "postings_cache.json")
+        to_read = postings.pick(all_jobs, matched, (lambda j: True) if args.all else store.is_new, cfg)
+        vision = None if args.no_ai else ai.poster_reader(cfg, env)
+        read_stats = postings.enrich(to_read, cache, cfg, today, vision=vision)
+        log.info("%s", read_stats.summary or "No new adverts to read")
+        if not args.dry_run:
+            cache.prune(today)
+            cache.save()
+        matched = select_jobs(all_jobs, cfg)
+
     new = matched if args.all else [j for j in matched if store.is_new(j)]
     log.info("%d jobs scanned, %d match your filters, %d new", len(all_jobs), len(matched), len(new))
-
-    env = dict(os.environ)
     shown, ai_note, outcome = new, None, None
     if cfg.ai.enabled and not args.no_ai:
         if env.get("AI_API_KEY") or env.get("AI_BASE_URL"):
@@ -168,16 +196,15 @@ def run(argv: list[str] | None = None) -> int:
         else:
             log.info("AI review is on but AI_API_KEY isn't set – skipping it")
 
-    today = datetime.now(SRI_LANKA_TZ).date()
-    data_dir = Path(args.state).parent
     stats_store = stats.StatsStore(data_dir / "stats.json")
-    record = stats.run_record(today, results, all_jobs, matched, new, shown, cfg, outcome)
+    record = stats.run_record(today, results, all_jobs, matched, new, shown, cfg, outcome, read_stats)
     runs = stats_store.runs + [record]
     tips = suggestions.generate(runs, cfg, today)
     weekly_day = cfg.weekly_summary in ("daily", today.strftime("%A").lower())
     stats_line = f"{len(all_jobs)} jobs scanned · {len(matched)} open matches · {len(new)} new · {len(shown)} sent"
     report = Report(
         jobs=shown, sources=results, cfg=cfg, day=today, ai_note=ai_note, stats_line=stats_line,
+        read_note=read_stats.summary if read_stats else None,
         weekly=stats.week_summary(runs, cfg, today) if weekly_day else [],
         tips=[t["text"] for t in tips if t["kind"] != "insight"][:3] if weekly_day else [],
     )

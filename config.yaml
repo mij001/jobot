@@ -562,7 +562,106 @@ experience_levels:
 include_unknown_level: true
 
 # ===========================================================================
-#  3. JOB SITES
+#  3. QUALIFICATION (degree / diploma)
+#  jobot reads each advert – text, poster image or PDF – and notes which
+#  qualifications it accepts. A job is reported if it accepts at least one
+#  ENABLED qualification, so "BSc or HND in Electrical Engineering" still
+#  shows up for a degree holder, while HND/NDT-only adverts don't.
+#  `title_hints` are used only when the advert itself doesn't say (e.g. a
+#  "Technical Officer" poster that couldn't be read is almost always diploma
+#  level). NVQ levels are recognised however they're written
+#  ("NVQ L5", "NVQ Level 05", "NVQ 5/6").
+# ===========================================================================
+qualifications:
+  degree:
+    enabled: true
+    label: Degree (BSc / BEng / NVQ 7)
+    keywords:
+      - degree
+      - degrees
+      - bachelor*
+      - bsc*
+      - b.sc*
+      - b. sc*
+      - beng
+      - b.eng*
+      - btech
+      - b.tech*
+      - graduate*
+      - undergraduate*
+      - postgraduate*
+      - msc
+      - m.sc*
+      - meng
+      - chartered engineer*
+      - ceng
+      - amie*
+      - nvq level 7
+
+  diploma:
+    enabled: false
+    label: Diploma (HND / NDT / NVQ 5–6)
+    keywords:
+      - diploma*
+      - hnd*
+      - hndip*
+      - hnde
+      - ndt
+      - ndes
+      - national diploma*
+      - higher national*
+      - nvq level 5
+      - nvq level 6
+    title_hints:
+      - technical officer*
+      - engineering assistant*
+      - technical assistant*
+      - draughtsman
+      - draftsman
+      - supervisor*
+
+  vocational:
+    enabled: false
+    label: Vocational (NVQ 3–4 / trade certificate)
+    keywords:
+      - nvq level 1
+      - nvq level 2
+      - nvq level 3
+      - nvq level 4
+      - trade test*
+      - trade certificate*
+      - national certificate*
+      - city & guilds
+      - city and guilds
+      - vocational
+      - craftsman
+    title_hints:
+      - technician*
+      - electrician*
+      - wireman
+      - wiremen
+      - fitter*
+      - mechanic*
+      - operator*
+      - lineman
+      - linemen
+
+  school:
+    enabled: false
+    label: School (O/L or A/L only)
+    keywords:
+      - o/l
+      - a/l
+      - g.c.e*
+      - gce
+      - ordinary level
+      - advanced level
+
+# Adverts that don't say (or couldn't be read). Keep those?
+include_unknown_qualification: true
+
+# ===========================================================================
+#  4. JOB SITES
 # ===========================================================================
 sources:
   topjobs:
@@ -691,7 +790,48 @@ sources:
       management: [5, 6]
 
 # ===========================================================================
-#  4. AI REVIEWER (optional, free)
+#  5. READING THE ADVERTS
+#  Job lists often show only a title, and many adverts are a poster image or
+#  a PDF. jobot opens each promising NEW job's own page, reads its text,
+#  reads posters with OCR (free Tesseract, installed by the workflow) and
+#  PDFs, and uses that for the sub-field, experience and qualification
+#  checks above. Each advert is read once (remembered in
+#  data/postings_cache.json).
+# ===========================================================================
+postings:
+  enabled: true
+  # Most new pages opened per run (1–3 s each); the rest wait for the next run.
+  max_per_run: 60
+  # Read the text out of poster images with OCR.
+  read_posters: true
+  # When OCR can't make sense of a poster, let the AI read it (Gemini only;
+  # uses your free AI quota) – at most max_ai_reads posters per run.
+  ai_vision: true
+  max_ai_reads: 5
+  # Jobs whose list entry is too thin to judge are opened too when their
+  # title contains one of `description_match_titles` – except titles with
+  # one of these (other fields).
+  skip_titles:
+    - civil
+    - mechanical
+    - software
+    - chemical
+    - structural
+    - quantity surveyor*
+    - textile*
+    - food
+    - automobile
+    - automotive
+    - garment*
+    - apparel
+    - accounting
+    - sales
+    - marketing
+    - merchandis*
+    - plumbing
+
+# ===========================================================================
+#  6. AI REVIEWER (optional, free)
 #  After the keyword filter, a free AI model reads each NEW job and scores
 #  how well it fits the profile below (0-10), adds a one-line reason, fills in
 #  experience levels the keywords missed, and hides jobs scoring under
@@ -706,16 +846,16 @@ ai:
   # Models to try, in order (blank = good free defaults for the provider).
   models: []
   profile: |
-    Electrical & Electronic Engineering (EEE) graduate in Sri Lanka looking for
-    engineering jobs in power, electronics, automation, telecom and related
-    fields. Prefer engineer / trainee-engineer roles over technician, sales or
-    admin roles. Open to internships and entry- to mid-level positions.
+    Electrical & Electronic Engineering (EEE) degree holder (BSc) in Sri Lanka
+    looking for degree-level engineering jobs in power, electronics, automation, telecom and related
+    fields. Prefer engineer / trainee-engineer roles over diploma-level
+    (technical officer, HND/NDT), technician, sales or admin roles. Open to internships and entry- to mid-level positions.
   min_score: 4
   batch_size: 20 # jobs per AI request
   requests_per_minute: 8 # stay under the free-tier limit
 
 # ===========================================================================
-#  5. NOTIFICATIONS
+#  7. NOTIFICATIONS
 #  Channels turn on automatically when their secrets are set
 #  (see README: TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID, and/or SMTP_* + EMAIL_TO).
 # ===========================================================================

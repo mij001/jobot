@@ -42,6 +42,16 @@ def generate(runs: list[dict], cfg: Config, today: date) -> list[dict]:
                         "text": f"{n} {lv.label} jobs match your sub-fields, but that level is switched off.",
                         "action": {"type": "enable_level", "key": lv_key, "label": f"Show {lv.label} jobs"}})
 
+    # 2b. Qualification levels hiding many jobs in your fields (only ever an
+    #     offer: a degree holder may not want diploma-level jobs at all).
+    for q_key, n in Counter(latest.get("open_qualification_filtered", {})).most_common():
+        q = cfg.qualification(q_key)
+        if q and not q.enabled and n >= BUSY:
+            out.append({"id": f"enable_qualification:{q_key}", "kind": "tip",
+                        "text": f"{n} open jobs in your sub-fields ask for {q.short.lower()} level "
+                                "qualifications, which you've switched off.",
+                        "action": {"type": "enable_qualification", "key": q_key, "label": f"Show {q.short} jobs"}})
+
     # 3. Sub-fields that never match anything (needs a month of history).
     month = _recent(runs, today, 30)
     if len(month) >= 14:

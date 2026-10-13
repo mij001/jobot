@@ -21,12 +21,20 @@ class Job:
     salary: str = ""
     level_hint: str | None = None  # experience level key suggested by the site itself
 
+    # Filled in by the posting reader (jobot.postings) from the advert itself.
+    read_via: str = ""  # how the advert was read: "page", "poster", "pdf", "ai", joined by "+"
+    contact: str = ""  # e-mail address to apply to
+    requirements: str = ""  # one-line summary of what the advert asks for
+
     # Filled in by the filter step.
     subfields: list[str] = field(default_factory=list)
     level: str | None = None
+    qualifications: list[str] = field(default_factory=list)  # e.g. ["degree", "diploma"]
+    min_years: int | None = None  # "N years experience" found in the advert
     also_on: list[tuple[str, str]] = field(default_factory=list)  # (source, url) duplicates
     ai_score: int | None = None  # 0-10 from the optional AI reviewer
     ai_reason: str = ""
+    preset: list[str] | None = field(default=None, repr=False)  # sub-fields set by the source
 
     @property
     def uid(self) -> str:

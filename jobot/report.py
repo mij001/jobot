@@ -31,6 +31,7 @@ class Report:
     stats_line: str | None = None
     weekly: list[str] = field(default_factory=list)  # "your week" summary lines
     tips: list[str] = field(default_factory=list)  # suggestions to show
+    read_note: str | None = None  # what the posting reader did
 
     # -- shared helpers ---------------------------------------------------
 
@@ -49,6 +50,18 @@ class Report:
         labels = [sf.label for key in job.subfields if (sf := self.cfg.subfield(key))]
         return ", ".join(labels)
 
+    def needs(self, job: Job) -> str:
+        """"Degree or Diploma · 2+ yrs · read from poster" """
+        parts = []
+        if job.qualifications:
+            parts.append(self.cfg.qualification_label(job.qualifications))
+        if job.min_years:
+            parts.append(f"{job.min_years}+ yrs experience")
+        via = [w for w in ("poster", "pdf", "ai") if w in job.read_via.split("+")]
+        if via and parts:
+            parts.append("read from " + {"poster": "poster", "pdf": "PDF", "ai": "poster (AI)"}[via[0]])
+        return " · ".join(parts)
+
     @property
     def title(self) -> str:
         n = len(self.jobs)
@@ -58,7 +71,7 @@ class Report:
         return f"{n} new EEE job{'s' if n != 1 else ''} in Sri Lanka – {when}"
 
     def source_summary(self) -> list[str]:
-        lines = [x for x in (self.stats_line, self.ai_note) if x]
+        lines = [x for x in (self.stats_line, self.read_note, self.ai_note) if x]
         for s in self.sources:
             if s.skipped:
                 lines.append(f"{s.name}: skipped ({s.skipped})")
@@ -76,12 +89,18 @@ class Report:
         if org:
             lines.append(f"🏢 {org}")
         lines.append(f"🎯 {escape(self.subfield_labels(job))}")
+        if needs := self.needs(job):
+            lines.append(f"🎓 {escape(needs)}")
+        if job.requirements:
+            lines.append(f"📋 {escape(job.requirements)}")
         if job.ai_score is not None:
             lines.append(f"⭐ {job.ai_score}/10 – {escape(job.ai_reason)}")
         if job.salary:
             lines.append(f"💰 {escape(job.salary)}")
         if job.closing:
             lines.append(f"⏳ Closes {escape(job.closing)}")
+        if job.contact:
+            lines.append(f"📧 {escape(job.contact)}")
         links = [f'<a href="{escape(job.url, quote=True)}">{escape(job.source)}</a>']
         links += [f'<a href="{escape(u, quote=True)}">{escape(s)}</a>' for s, u in job.also_on]
         lines.append("🔗 " + " | ".join(links))
@@ -132,12 +151,18 @@ class Report:
                 if org:
                     out.append(f"  {org}")
                 out.append(f"  Field: {self.subfield_labels(j)}")
+                if needs := self.needs(j):
+                    out.append(f"  Needs: {needs}")
+                if j.requirements:
+                    out.append(f"  Asks for: {j.requirements}")
                 if j.ai_score is not None:
                     out.append(f"  Fit: {j.ai_score}/10 – {j.ai_reason}")
                 if j.salary:
                     out.append(f"  Salary: {j.salary}")
                 if j.closing:
                     out.append(f"  Closes: {j.closing}")
+                if j.contact:
+                    out.append(f"  Apply: {j.contact}")
                 out.append(f"  {j.source}: {j.url}")
                 out.extend(f"  {s}: {u}" for s, u in j.also_on)
                 out.append("")
@@ -171,13 +196,20 @@ class Report:
                 salary = f" · {escape(j.salary)}" if j.salary else ""
                 fit = (f'<br><span style="color:#1a6d3d;font-size:13px">⭐ {j.ai_score}/10 – '
                        f'{escape(j.ai_reason)}</span>') if j.ai_score is not None else ""
+                needs = self.needs(j)
+                details = "".join(
+                    f'<br><span style="color:#444;font-size:13px">{icon} {escape(text)}</span>'
+                    for icon, text in (("🎓", needs), ("📋", j.requirements)) if text)
+                if j.contact:
+                    details += (f'<br><span style="color:#444;font-size:13px">📧 <a href="mailto:'
+                                f'{escape(j.contact, quote=True)}">{escape(j.contact)}</a></span>')
                 parts.append(
                     '<div style="margin:0 0 14px">'
                     f'<a href="{escape(j.url, quote=True)}" style="font-weight:bold;font-size:15px">'
                     f'{escape(j.title)}</a><br>'
                     f'<span style="color:#444">{org}</span><br>'
                     f'<span style="color:#666;font-size:13px">{escape(self.subfield_labels(j))}{salary}{closing}'
-                    f' · {" | ".join(links)}</span>{fit}'
+                    f' · {" | ".join(links)}</span>{details}{fit}'
                     '</div>'
                 )
         if self.weekly:
