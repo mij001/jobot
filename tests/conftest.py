@@ -11,10 +11,13 @@ from jobot.config import load_config  # noqa: E402
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
+DEFAULT_CONFIG = FIXTURES / "default_config.yaml"
+
+
 @pytest.fixture
 def cfg():
-    """The shipped config.yaml, so tests also guard the defaults users get."""
-    return load_config(ROOT / "config.yaml")
+    """The default settings (a frozen copy – your own config.yaml may differ)."""
+    return load_config(DEFAULT_CONFIG)
 
 
 @pytest.fixture

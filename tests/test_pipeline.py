@@ -2,6 +2,7 @@
 
 import json
 from datetime import date
+from pathlib import Path
 
 import pytest
 
@@ -90,7 +91,7 @@ def fake_env(monkeypatch, tmp_path):
     monkeypatch.setattr(jobot_main, "SOURCES", {"fake": FakeSource, "broken": BrokenSource})
     config = tmp_path / "config.yaml"
     config.write_text(
-        (jobot_main.ROOT / "config.yaml").read_text(encoding="utf-8").split("\nsources:")[0]
+        (Path(__file__).parent / "fixtures" / "default_config.yaml").read_text(encoding="utf-8").split("\nsources:")[0]
         + "\nsources:\n  fake: {}\n  broken: {}\n",
         encoding="utf-8",
     )
@@ -152,3 +153,12 @@ def test_ai_hidden_jobs_are_not_sent_but_remembered(fake_env, monkeypatch):
     assert sent[0].jobs == []
     assert "1 hidden as poor fits" in sent[0].email_text()
     assert "FakeSite:1" in json.loads(state.read_text())["ids"]
+
+
+def test_live_config_is_valid():
+    """Whatever you saved in config.yaml (by hand or on the settings page) must load."""
+    from jobot.config import load_config
+    from jobot.sources import SOURCES
+    cfg = load_config(jobot_main.ROOT / "config.yaml")
+    assert set(cfg.sources) <= set(SOURCES)
+    assert cfg.enabled_subfields and cfg.enabled_sources()
