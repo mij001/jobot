@@ -620,7 +620,9 @@ function subfieldRow(key, sf) {
 }
 
 function sourceRow(key, opts) {
-  const [title, sub] = SOURCE_INFO[key] || [key, ""];
+  const [title, about] = SOURCE_INFO[key] || [key, ""];
+  const sub = opts.skip_on_github_actions
+    ? "Blocks GitHub's servers – only checked when you run jobot on your own computer" : about;
   let panel = null, get = () => ({});
   if (key === "linkedin") {
     const kw = chipInput(opts.keywords, "Add search…", "LinkedIn searches");

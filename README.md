@@ -10,7 +10,7 @@ Engineering** vacancies and sends the new ones to your **Telegram** and/or
 | [XpressJobs](https://xpress.jobs) | Electronics/Electrical, Engineering, Telecom … sectors (+ the site's career level). **Blocks GitHub's servers**, so the daily run skips it – see [below](#xpressjobs) |
 | [ikman.lk](https://ikman.lk/en/ads/sri-lanka/jobs) | engineer, technician, internship, IT jobs |
 | [Rooster](https://rooster.jobs) | keyword searches limited to Sri Lanka |
-| [Observer Jobs](https://www.observerjobs.lk/vacancies) | all vacancies – many government and state posts |
+| [Observer Jobs](https://www.observerjobs.lk/vacancies) | all vacancies – many government posts. **Blocks GitHub's servers** too, so the daily run skips it (Gazette.lk covers most of the same notices) |
 | [LankaJobs](https://lankajobs.lk) | government, private and foreign jobs, newest first |
 | [Gazette.lk](https://www.gazette.lk) + any RSS feed | government job notices; add more feeds in the settings |
 | Company careers pages | [CEB](https://www.ceb.lk/careers/en), [SLT-Mobitel](https://careers.slt.lk/) – add any employer's page |
@@ -247,9 +247,9 @@ Tests: `pip install -r requirements-dev.txt && python -m pytest`
 
 ## Good to know
 
-* <a id="xpressjobs"></a>**XpressJobs refuses connections from cloud
-  servers**, including GitHub Actions, so the daily run skips it and the
-  footer says so. It still works when you run jobot on your own computer.
+* <a id="xpressjobs"></a>**XpressJobs and Observer Jobs refuse connections
+  from cloud servers**, including GitHub Actions, so the daily run skips
+  them and the footer says so. It still works when you run jobot on your own computer.
   To cover it anyway, turn on XpressJobs' own free **job alerts** for the
   *Electronics / Electrical* sector in your XpressJobs account.
 

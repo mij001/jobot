@@ -615,7 +615,10 @@ sources:
 
   observerjobs:
     enabled: true
-    # Observer Jobs (Lake House) – lots of government/state vacancies.
+    # Observer Jobs (Lake House) – lots of government/state vacancies. Like
+    # XpressJobs it refuses GitHub's servers, so the daily run skips it;
+    # Gazette.lk (RSS below) carries most of the same government notices.
+    skip_on_github_actions: true
     max_pages: 10  # 15 jobs per page; usually 4-5 pages in total
 
   lankajobs:
