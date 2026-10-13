@@ -13,12 +13,30 @@ class ConfigError(ValueError):
     pass
 
 
+ORDER_BY = {
+    "best_match": "Best match first (AI score, then newest)",
+    "newest": "Newest first",
+    "closing_soon": "Closing soonest first",
+    "company": "Company A–Z",
+    "title": "Job title A–Z",
+}
+GROUP_BY = {
+    "level": "Experience level",
+    "subfield": "Sub-field",
+    "site": "Job site",
+    "none": "No grouping",
+}
+
+
 @dataclass
 class Subfield:
     key: str
     label: str
     keywords: list[str]
     enabled: bool = True
+    # When set, the ad must ALSO mention one of these somewhere (title,
+    # description or category) – e.g. "Lecturer" only if it says "electrical".
+    requires_any: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -62,6 +80,8 @@ class Config:
     sources: dict[str, dict[str, Any]] = field(default_factory=dict)
     send_when_empty: bool = True
     remember_days: int = 60
+    order_by: str = "best_match"
+    group_by: str = "level"
     ai: AIConfig = field(default_factory=AIConfig)
 
     @property
@@ -137,6 +157,7 @@ def parse_config(raw: dict[str, Any]) -> Config:
             label=str(body.get("label") or key),
             keywords=_str_list(body.get("keywords"), f"subfields.{key}.keywords"),
             enabled=bool(body.get("enabled", True)),
+            requires_any=_str_list(body.get("requires_any"), f"subfields.{key}.requires_any"),
         ))
     if not subfields:
         raise ConfigError("config needs at least one entry under `subfields`")
@@ -168,8 +189,17 @@ def parse_config(raw: dict[str, Any]) -> Config:
         sources={str(k): dict(v or {}) for k, v in (raw.get("sources") or {}).items()},
         send_when_empty=bool(notify.get("send_when_empty", True)),
         remember_days=int(notify.get("remember_days", 60)),
+        order_by=_choice(notify.get("order_by", "best_match"), ORDER_BY, "notify.order_by"),
+        group_by=_choice(notify.get("group_by", "level"), GROUP_BY, "notify.group_by"),
         ai=_parse_ai(raw.get("ai") or {}),
     )
+
+
+def _choice(value: Any, options: dict[str, str], where: str) -> str:
+    value = str(value or "").strip().lower()
+    if value not in options:
+        raise ConfigError(f"{where} must be one of: {', '.join(options)}")
+    return value
 
 
 def _parse_ai(body: dict[str, Any]) -> AIConfig:

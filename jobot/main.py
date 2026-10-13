@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import ai, notifiers
-from .config import Config, ConfigError, load_config
+from .config import GROUP_BY, ORDER_BY, Config, ConfigError, load_config
 from .filters import select_jobs
 from .http import Http
 from .models import Job
@@ -46,6 +46,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="print the report instead of sending it; don't update the state file")
     p.add_argument("--all", action="store_true",
                    help="report every matching open job, not only ones not sent before")
+    p.add_argument("--order-by", choices=list(ORDER_BY), help="how to sort jobs in the message")
+    p.add_argument("--group-by", choices=list(GROUP_BY), help="how to group jobs in the message")
     p.add_argument("--no-ai", action="store_true", help="skip the AI review step this run")
     p.add_argument("--list", action="store_true", help="show sub-fields, levels and sources, then exit")
     p.add_argument("-v", "--verbose", action="store_true")
@@ -61,6 +63,10 @@ def apply_overrides(cfg: Config, args: argparse.Namespace) -> None:
         cfg.only_sources(sources)
     if args.include_unknown is not None:
         cfg.include_unknown_level = args.include_unknown
+    if args.order_by:
+        cfg.order_by = args.order_by
+    if args.group_by:
+        cfg.group_by = args.group_by
 
 
 def print_options(cfg: Config) -> None:

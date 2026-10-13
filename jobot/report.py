@@ -8,6 +8,7 @@ from html import escape
 
 from .config import Config
 from .models import Job
+from .ordering import group_jobs
 
 TELEGRAM_LIMIT = 4000  # Telegram's hard limit is 4096 characters
 
@@ -30,17 +31,9 @@ class Report:
 
     # -- shared helpers ---------------------------------------------------
 
-    def groups(self) -> list[tuple[str, list[Job]]]:
-        """Jobs grouped by experience level, in config order, unknown last."""
-        out = []
-        for lv in self.cfg.levels:
-            items = [j for j in self.jobs if j.level == lv.key]
-            if items:
-                out.append((lv.label, _best_first(items)))
-        unknown = [j for j in self.jobs if j.level is None]
-        if unknown:
-            out.append(("Level not stated", _best_first(unknown)))
-        return out
+    def groups(self) -> list[tuple[str | None, list[Job]]]:
+        """Jobs grouped and sorted as set in notify.group_by / notify.order_by."""
+        return group_jobs(self.jobs, self.cfg, self.day)
 
     def subfield_labels(self, job: Job) -> str:
         labels = [sf.label for key in job.subfields if (sf := self.cfg.subfield(key))]
@@ -89,7 +82,8 @@ class Report:
         footer = "<i>" + escape(" · ".join(self.source_summary())) + "</i>"
         blocks: list[str] = []
         for label, jobs in self.groups():
-            blocks.append(f"🎓 <b>{escape(label)}</b> ({len(jobs)})")
+            if label:
+                blocks.append(f"📂 <b>{escape(label)}</b> ({len(jobs)})")
             blocks.extend(self._telegram_job(j) for j in jobs)
         blocks.append(footer)
 
@@ -108,7 +102,8 @@ class Report:
     def email_text(self) -> str:
         out = [self.title, ""]
         for label, jobs in self.groups():
-            out.append(f"== {label} ({len(jobs)}) ==")
+            if label:
+                out.append(f"== {label} ({len(jobs)}) ==")
             for j in jobs:
                 out.append(f"* {j.title}")
                 org = " · ".join(x for x in (j.company, j.location) if x)
@@ -133,8 +128,9 @@ class Report:
             f'<h2 style="color:#1a3d6d">🔌 {escape(self.title)}</h2>',
         ]
         for label, jobs in self.groups():
-            parts.append(f'<h3 style="border-bottom:1px solid #ccc;padding-bottom:4px">'
-                         f'{escape(label)} ({len(jobs)})</h3>')
+            if label:
+                parts.append(f'<h3 style="border-bottom:1px solid #ccc;padding-bottom:4px">'
+                             f'{escape(label)} ({len(jobs)})</h3>')
             for j in jobs:
                 links = [f'<a href="{escape(j.url, quote=True)}">{escape(j.source)}</a>']
                 links += [f'<a href="{escape(u, quote=True)}">{escape(s)}</a>' for s, u in j.also_on]
@@ -156,7 +152,3 @@ class Report:
         parts.append(f'<p style="color:#888;font-size:12px">Sources: {summary}</p></div>')
         return "\n".join(parts)
 
-
-def _best_first(jobs: list[Job]) -> list[Job]:
-    """Highest AI score first; unscored jobs keep their order after scored ones."""
-    return sorted(jobs, key=lambda j: (j.ai_score is None, -(j.ai_score or 0)))

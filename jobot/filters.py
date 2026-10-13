@@ -45,8 +45,11 @@ def matching_keywords(keywords: list[str], text: str) -> list[str]:
 
 def match_subfields(job: Job, cfg: Config) -> list[str]:
     """Return keys of the enabled sub-fields this job belongs to."""
+    everything = f"{job.title}\n{job.description}\n{job.category}"
+    usable = [sf for sf in cfg.enabled_subfields
+              if not sf.requires_any or matching_keywords(sf.requires_any, everything)]
     title_hits: list[str] = []
-    for sf in cfg.enabled_subfields:
+    for sf in usable:
         if matching_keywords(sf.keywords, job.title):
             title_hits.append(sf.key)
     if title_hits or not cfg.match_description:
@@ -60,7 +63,7 @@ def match_subfields(job: Job, cfg: Config) -> list[str]:
     desc_hits: set[str] = set()
     category_hit = False
     per_subfield: dict[str, int] = {}
-    for sf in cfg.enabled_subfields:
+    for sf in usable:
         d = {k.lower() for k in matching_keywords(sf.keywords, job.description)}
         c = bool(matching_keywords(sf.keywords, job.category))
         desc_hits |= d
@@ -138,7 +141,9 @@ def select_jobs(jobs: list[Job], cfg: Config) -> list[Job]:
         seen_uids.add(job.uid)
         if is_excluded(job, cfg):
             continue
-        job.subfields = match_subfields(job, cfg)
+        # A source may pre-tag a job (e.g. a company page set to "power").
+        preset = [k for k in job.subfields if (sf := cfg.subfield(k)) and sf.enabled]
+        job.subfields = preset + [k for k in match_subfields(job, cfg) if k not in preset]
         if not job.subfields:
             continue
         job.level = classify_level(job, cfg)

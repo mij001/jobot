@@ -46,6 +46,8 @@ subfields:
       - grid-tied
       - energy engineer
       - energy management
+      - energy audit*
+      - energy efficiency
       - CEB
       - LECO
       - Ceylon Electricity Board
@@ -192,6 +194,213 @@ subfields:
       - E&E
       - B.Sc. Eng (Electrical)
       - electrical engineering graduate*
+      - transmission
+
+  # -- more specialised areas ------------------------------------------------
+
+  marine:
+    enabled: true
+    label: Marine & Offshore Electrical
+    keywords:
+      - electro technical officer*
+      - electro-technical officer*
+      - ETO
+      - marine electrical*
+      - marine electrician*
+      - marine electronic*
+      - ship electrical*
+      - shipboard electrical
+      - offshore electrical
+      - dockyard electrical
+
+  aviation:
+    enabled: true
+    label: Aviation & Avionics
+    keywords:
+      - avionic*
+      - aircraft electrical
+      - aircraft electronic*
+      - B2 licen*
+      - airport electrical
+      - airport systems engineer*
+
+  biomedical:
+    enabled: true
+    label: Biomedical & Medical Equipment
+    keywords:
+      - biomedical
+      - bio-medical
+      - medical equipment
+      - medical electronic*
+      - clinical engineer*
+      - imaging equipment
+      - X-ray engineer*
+
+  ev_battery:
+    enabled: true
+    label: Electric Vehicles & Batteries
+    keywords:
+      - electric vehicle*
+      - EV
+      - e-mobility
+      - hybrid vehicle*
+      - battery technician*
+      - battery engineer*
+      - battery management
+      - lithium battery
+      - lithium-ion
+
+  critical_power:
+    enabled: true
+    label: Data Centre & Critical Power
+    keywords:
+      - data centre
+      - data center
+      - UPS
+      - critical power
+      - standby power
+      - power backup
+      - rectifier*
+
+  lifts:
+    enabled: true
+    label: Lifts & Escalators
+    keywords:
+      - lift technician*
+      - lift engineer*
+      - lift mechanic*
+      - elevator*
+      - escalator*
+
+  security_systems:
+    enabled: true
+    label: Fire, Security & Low-current Systems
+    keywords:
+      - CCTV
+      - access control
+      - fire detection
+      - security systems engineer*
+      - security system technician*
+      - intruder alarm*
+      - PABX
+      - structured cabling
+      - public address system*
+
+  testing:
+    enabled: true
+    label: Testing, Commissioning & Electrical QA/QC
+    keywords:
+      - testing and commissioning
+      - testing & commissioning
+      - commissioning engineer*
+      - commissioning technician*
+      - protection testing
+      - relay testing
+      - calibration engineer*
+      - calibration technician*
+      - metrolog*
+      - electrical inspector*
+      - QA/QC electrical
+      - QC electrical
+
+  railway:
+    enabled: true
+    label: Railway & Signalling
+    keywords:
+      - railway signal*
+      - signalling
+      - signaling
+      - traction power
+      - rolling stock electrical
+      - railway electrical
+
+  broadcast:
+    enabled: true
+    label: Broadcast, Audio & Video
+    keywords:
+      - broadcast engineer*
+      - broadcast technician*
+      - broadcast transmission
+      - TV transmission
+      - transmitter*
+      - studio engineer*
+      - audio visual
+      - audio-visual
+      - AV technician*
+      - sound engineer*
+
+  networking:
+    enabled: true
+    label: Networking & IT Hardware
+    keywords:
+      - network engineer*
+      - network administrator*
+      - network technician*
+      - NOC engineer*
+      - CCNA
+      - CCNP
+      - IT hardware
+      - hardware technician*
+
+  technical_sales:
+    enabled: true
+    label: Technical Sales & Applications
+    keywords:
+      - sales engineer*
+      - technical sales
+      - application engineer*
+      - applications engineer*
+      - product engineer*
+      - pre-sales engineer*
+      - presales engineer*
+      - business development engineer*
+    # only counts when the ad is about electrical/electronic products
+    requires_any:
+      - electrical
+      - electronic*
+      - EEE
+      - power
+      - solar
+      - automation
+      - switchgear
+      - cable*
+      - lighting
+      - telecom*
+      - instrumentation
+      - energy
+      - embedded
+      - robotic*
+      - mechatronic*
+
+  teaching:
+    enabled: true
+    label: Teaching & Research (EEE)
+    keywords:
+      - lecturer*
+      - instructor*
+      - demonstrator*
+      - teaching assistant*
+      - research assistant*
+      - research engineer*
+      - research officer*
+      - tutor*
+    # only lecturer/research posts in an EEE-related area
+    requires_any:
+      - electrical
+      - electronic*
+      - EEE
+      - power
+      - solar
+      - automation
+      - switchgear
+      - cable*
+      - lighting
+      - telecom*
+      - instrumentation
+      - energy
+      - embedded
+      - robotic*
+      - mechatronic*
 
 # Job titles containing any of these are always dropped (whole words/phrases).
 # Handy for removing noise, e.g. add "technician" and "electrician" if you only
@@ -402,6 +611,40 @@ sources:
     queries: [electrical, electronic, engineer, engineering, automation, embedded, telecommunication, solar, intern]
     max_pages: 3 # 100 jobs per page, per query
 
+  observerjobs:
+    enabled: true
+    # Observer Jobs (Lake House) – lots of government/state vacancies.
+    max_pages: 10  # 15 jobs per page; usually 4-5 pages in total
+
+  lankajobs:
+    enabled: true
+    # LankaJobs – government, private and foreign jobs, newest first.
+    max_pages: 8  # 24 jobs per page
+
+  rss:
+    enabled: true
+    # Any RSS/Atom feed of job adverts. WordPress job blogs have one at /feed.
+    feeds:
+      - name: Gazette.lk
+        url: https://www.gazette.lk/feed
+        pages: 5  # 10 posts per page
+
+  company_pages:
+    enabled: true
+    # Employers' own careers pages. Every link that looks like a vacancy is
+    # picked up. `subfield` tags everything found on that page (handy when a
+    # link only says "Technician"); leave it out to use normal matching.
+    delay_seconds: 5
+    pages:
+      - name: CEB
+        url: https://www.ceb.lk/careers/en
+        company: Ceylon Electricity Board
+        subfield: power
+      - name: SLT-Mobitel
+        url: https://careers.slt.lk/
+        company: SLT-Mobitel
+        subfield: telecom
+
   linkedin:
     enabled: true
     location: Sri Lanka
@@ -465,3 +708,9 @@ notify:
   send_when_empty: true
   # Forget a vacancy after this many days (a re-post after that is re-sent).
   remember_days: 60
+  # How jobs are arranged in each message.
+  #   order_by: best_match | newest | closing_soon | company | title
+  #     (best_match = highest AI score first, then newest)
+  #   group_by: level | subfield | site | none
+  order_by: best_match
+  group_by: level
