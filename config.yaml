@@ -418,6 +418,7 @@ exclude_title_keywords:
   - test automation
   - quality control engineer
   - devops
+  - technician
   # - technician
   # - electrician
 
@@ -617,20 +618,20 @@ sources:
     # XpressJobs it refuses GitHub's servers, so the daily run skips it;
     # Gazette.lk (RSS below) carries most of the same government notices.
     skip_on_github_actions: true
-    max_pages: 10  # 15 jobs per page; usually 4-5 pages in total
+    max_pages: 10 # 15 jobs per page; usually 4-5 pages in total
 
   lankajobs:
     enabled: true
     # LankaJobs – government, private and foreign jobs, newest first.
-    max_pages: 8  # 24 jobs per page
+    max_pages: 8 # 24 jobs per page
 
   rss:
     enabled: true
     # Any RSS/Atom feed of job adverts. WordPress job blogs have one at /feed.
     feeds:
-      - name: Gazette.lk
-        url: https://www.gazette.lk/feed
-        pages: 5  # 10 posts per page
+      - url: https://www.gazette.lk/feed
+        name: Gazette.lk
+        pages: 5
 
   company_pages:
     enabled: true
@@ -639,12 +640,12 @@ sources:
     # link only says "Technician"); leave it out to use normal matching.
     delay_seconds: 5
     pages:
-      - name: CEB
-        url: https://www.ceb.lk/careers/en
+      - url: https://www.ceb.lk/careers/en
+        name: CEB
         company: Ceylon Electricity Board
         subfield: power
-      - name: SLT-Mobitel
-        url: https://careers.slt.lk/
+      - url: https://careers.slt.lk/
+        name: SLT-Mobitel
         company: SLT-Mobitel
         subfield: telecom
 
