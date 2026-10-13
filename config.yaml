@@ -10,7 +10,6 @@
 #                                                electricity, electrician ...
 # ---------------------------------------------------------------------------
 
-
 # ===========================================================================
 #  1. EEE SUB-FIELDS
 #  A job is reported if it matches at least one ENABLED sub-field.
@@ -19,7 +18,7 @@
 # ===========================================================================
 subfields:
   power:
-    enabled: true
+    enabled: false
     label: Power & Energy
     keywords:
       - power engineer
@@ -52,7 +51,7 @@ subfields:
       - Ceylon Electricity Board
 
   renewable:
-    enabled: true
+    enabled: false
     label: Renewable Energy / Solar
     keywords:
       - solar
@@ -70,7 +69,7 @@ subfields:
       - EV charging
 
   building_services:
-    enabled: true
+    enabled: false
     label: Building Services / MEP (Electrical)
     keywords:
       - MEP
@@ -90,7 +89,7 @@ subfields:
       - electrical draftsman
 
   automation:
-    enabled: true
+    enabled: false
     label: Automation, Control & Instrumentation
     keywords:
       - industrial automation
@@ -194,7 +193,6 @@ subfields:
       - B.Sc. Eng (Electrical)
       - electrical engineering graduate*
 
-
 # Job titles containing any of these are always dropped (whole words/phrases).
 # Handy for removing noise, e.g. add "technician" and "electrician" if you only
 # want engineer-level roles.
@@ -214,11 +212,11 @@ exclude_title_keywords:
   # - technician
   # - electrician
 
-# Matching on the job title is always on. Descriptions / site categories are
-# noisier, so a job that only mentions your keywords in its description (e.g.
-# a plain "Assistant Engineer" ad) is kept only if
-#   * its title contains one of `description_match_titles`, and
-#   * the description has at least `min_description_hits` DIFFERENT keywords.
+  # Matching on the job title is always on. Descriptions / site categories are
+  # noisier, so a job that only mentions your keywords in its description (e.g.
+  # a plain "Assistant Engineer" ad) is kept only if
+  #   * its title contains one of `description_match_titles`, and
+  #   * the description has at least `min_description_hits` DIFFERENT keywords.
 match_description: true
 min_description_hits: 2
 description_match_titles:
@@ -269,7 +267,6 @@ overseas_keywords:
   - Poland
   - Romania
   - Israel
-
 
 # ===========================================================================
 #  2. EXPERIENCE LEVELS
@@ -356,7 +353,6 @@ experience_levels:
 # Many ads don't say what level they are. Keep those?
 include_unknown_level: true
 
-
 # ===========================================================================
 #  3. JOB SITES
 # ===========================================================================
@@ -381,15 +377,15 @@ sources:
     #   132 Technical/Mechanical    50 Telecommunications
     #   139 IT-Hardware/Networks/Systems
     sectors: [24, 25, 132, 50, 139]
-    max_pages: 10  # 100 jobs per page
+    max_pages: 10 # 100 jobs per page
     # How XpressJobs' own "career level" maps to the levels above.
     career_levels:
-      1: entry       # Entry Level
-      2: mid         # Associate
-      3: mid         # Mid-Senior Level
-      4: senior      # Senior
-      5: management  # Executive
-      6: management  # Director
+      1: entry # Entry Level
+      2: mid # Associate
+      3: mid # Mid-Senior Level
+      4: senior # Senior
+      5: management # Executive
+      6: management # Director
 
   ikman:
     enabled: true
@@ -398,13 +394,13 @@ sources:
       - technician-jobs
       - internships-and-trainees-jobs
       - it-and-network-industry-jobs
-    max_pages: 4  # 25 ads per page
+    max_pages: 4 # 25 ads per page
 
   rooster:
     enabled: true
     country: Sri Lanka
     queries: [electrical, electronic, engineer, engineering, automation, embedded, telecommunication, solar, intern]
-    max_pages: 3  # 100 jobs per page, per query
+    max_pages: 3 # 100 jobs per page, per query
 
   linkedin:
     enabled: true
@@ -420,7 +416,7 @@ sources:
       - solar engineer
       - electrical engineering intern
     posted_within_days: 7
-    max_pages: 1  # 10 jobs per page, per keyword
+    max_pages: 1 # 10 jobs per page, per keyword
     # LinkedIn limits anonymous searches, so go slowly and, when it says
     # "too many requests", wait once before trying again.
     delay_seconds: 6
@@ -434,7 +430,6 @@ sources:
       mid: [3, 4]
       senior: [4]
       management: [5, 6]
-
 
 # ===========================================================================
 #  4. AI REVIEWER (optional, free)
@@ -457,9 +452,8 @@ ai:
     fields. Prefer engineer / trainee-engineer roles over technician, sales or
     admin roles. Open to internships and entry- to mid-level positions.
   min_score: 4
-  batch_size: 20          # jobs per AI request
-  requests_per_minute: 8  # stay under the free-tier limit
-
+  batch_size: 20 # jobs per AI request
+  requests_per_minute: 8 # stay under the free-tier limit
 
 # ===========================================================================
 #  5. NOTIFICATIONS
