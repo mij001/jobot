@@ -129,3 +129,20 @@ def test_poster_reader_sends_image_and_respects_budget(cfg):
     assert ai.poster_reader(cfg, {}) is None  # no key
     cfg.ai.provider = "groq"
     assert ai.poster_reader(cfg, {"AI_API_KEY": "k"}) is None  # its models can't see images
+
+
+def test_overloaded_model_falls_back_and_error_is_short(cfg):
+    job = make_jobs(1)[0]
+    overloaded = FakeResp(503, body=[{"error": {"code": 503, "message": "This model is currently experiencing\n high demand. Spikes in demand are usually temporary."}}])
+    models = []
+
+    def post(url, json, headers, timeout):
+        models.append(json["model"])
+        return overloaded if len(models) == 1 else reply([{"id": job.uid, "score": 7, "level": "entry", "reason": "ok"}])
+
+    result = ai.review([job], cfg, {"AI_API_KEY": "k"}, post=post, sleep=lambda s: None)
+    assert models == ["gemini-flash-latest", "gemini-3.8-flash"] and job.ai_score == 7 and not result.error
+
+    result = ai.review(make_jobs(1), cfg, {"AI_API_KEY": "k"}, post=lambda *a, **k: overloaded, sleep=lambda s: None)
+    assert result.error.startswith("no model available – HTTP 503: This model is currently")
+    assert ai._error_text(overloaded) == "HTTP 503: This model is currently experiencing high demand. Spikes in demand are usually temporary."

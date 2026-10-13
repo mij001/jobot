@@ -81,7 +81,20 @@ class ReviewResult:
 
 
 class _ModelGone(Exception):
-    pass
+    """This model can't answer (retired, or overloaded right now): try the next one."""
+
+
+def _error_text(resp) -> str:
+    """'HTTP 503: This model is currently experiencing high demand…' – one short line."""
+    try:
+        data = resp.json()
+        if isinstance(data, list):  # Gemini wraps errors in a list
+            data = data[0]
+        message = data["error"]["message"] if isinstance(data.get("error"), dict) else data["error"]
+    except Exception:
+        message = resp.text
+    message = " ".join(str(message).split())
+    return f"HTTP {resp.status_code}: " + (message[:90] + "…" if len(message) > 90 else message)
 
 
 def endpoint(cfg: Config, env: dict[str, str]) -> tuple[str, list[str]]:
@@ -130,10 +143,10 @@ def _ask(url: str, model: str, key: str, messages: list[dict], post, sleep) -> s
             log.info("AI rate limit hit; waiting %ds", wait)
             sleep(min(wait, 120))
             continue
-        if resp.status_code in (400, 404) and "model" in resp.text.lower():
-            raise _ModelGone(f"{model}: HTTP {resp.status_code}")
+        if resp.status_code in (500, 502, 503, 504) or (resp.status_code in (400, 404) and "model" in resp.text.lower()):
+            raise _ModelGone(f"{model}: {_error_text(resp)}")
         if not resp.ok:
-            raise RuntimeError(f"HTTP {resp.status_code}: {resp.text[:200]}")
+            raise RuntimeError(_error_text(resp))
         return resp.json()["choices"][0]["message"]["content"] or ""
     raise RuntimeError("rate-limited")
 
@@ -159,7 +172,7 @@ def poster_reader(cfg: Config, env: dict[str, str], post=requests.post,
         url, models = endpoint(cfg, env)
     except ValueError:
         return None
-    state = {"left": cfg.postings.max_ai_reads, "last": 0.0}
+    state = {"left": cfg.postings.max_ai_reads, "last": 0.0, "models": list(models)}
     gap = 60.0 / max(1, cfg.ai.requests_per_minute)
 
     def read(data: bytes, mime: str) -> str:
@@ -174,14 +187,21 @@ def poster_reader(cfg: Config, env: dict[str, str], post=requests.post,
             {"type": "text", "text": VISION_PROMPT},
             {"type": "image_url", "image_url": {"url": image}},
         ]}]
+        text = None
         try:
-            text = _ask(url, models[0], env["AI_API_KEY"], messages, post, sleep)
-        except Exception as exc:  # quota, model change …: just stop asking this run
+            while text is None and state["models"]:
+                try:
+                    text = _ask(url, state["models"][0], env["AI_API_KEY"], messages, post, sleep)
+                except _ModelGone as exc:
+                    log.info("AI model unavailable for posters, trying the next one: %s", exc)
+                    state["models"].pop(0)
+        except Exception as exc:  # quota used up, bad reply …: stop asking this run
             log.info("AI couldn't read a poster (%s); not asking again this run", str(exc)[:120])
-            state["left"] = 0
-            return ""
         finally:
             state["last"] = time.monotonic()
+        if text is None:
+            state["left"] = 0
+            return ""
         return "" if text.strip().upper().startswith("NONE") else text
 
     return read
@@ -223,20 +243,20 @@ def _review(jobs, cfg, env, post, sleep) -> ReviewResult:
         ]
         if i:
             sleep(gap)
-        reply = None
+        reply, last_problem = None, ""
         while models and reply is None:
             try:
                 reply = _ask(url, models[0], key, messages, post, sleep)
                 result.model = models[0]
             except _ModelGone as exc:
                 log.warning("AI model unavailable, trying the next one: %s", exc)
-                models = models[1:]
+                models, last_problem = models[1:], str(exc).split(": ", 1)[-1]
             except (requests.RequestException, RuntimeError, KeyError, IndexError, ValueError) as exc:
                 result.error = str(exc)[:120]
                 log.warning("AI review stopped: %s", result.error)
                 return result
         if reply is None:
-            result.error = "none of the configured models is available"
+            result.error = "no model available" + (f" – {last_problem}" if last_problem else "")
             return result
         try:
             rows = parse_reply(reply)
