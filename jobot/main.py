@@ -9,7 +9,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import ai, notifiers
+from . import ai, notifiers, stats, suggestions
 from .config import GROUP_BY, ORDER_BY, Config, ConfigError, load_config
 from .filters import select_jobs
 from .http import Http
@@ -33,7 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="jobot", description="Sri Lankan EEE job hunter")
     p.add_argument("--config", default=str(ROOT / "config.yaml"), help="path to config.yaml")
     p.add_argument("--state", default=str(ROOT / "data" / "seen_jobs.json"),
-                   help="where already-sent jobs are remembered")
+                   help="where already-sent jobs are remembered (statistics go next to it)")
     p.add_argument("--subfields", help="only these sub-fields this run, e.g. power,electronics")
     p.add_argument("--levels", help="only these experience levels this run, e.g. internship,entry")
     p.add_argument("--sources", help="only these sites this run, e.g. topjobs,ikman")
@@ -158,7 +158,7 @@ def run(argv: list[str] | None = None) -> int:
     log.info("%d jobs scanned, %d match your filters, %d new", len(all_jobs), len(matched), len(new))
 
     env = dict(os.environ)
-    shown, ai_note = new, None
+    shown, ai_note, outcome = new, None, None
     if cfg.ai.enabled and not args.no_ai:
         if env.get("AI_API_KEY") or env.get("AI_BASE_URL"):
             outcome = ai.review(new, cfg, env)
@@ -169,7 +169,18 @@ def run(argv: list[str] | None = None) -> int:
             log.info("AI review is on but AI_API_KEY isn't set – skipping it")
 
     today = datetime.now(SRI_LANKA_TZ).date()
-    report = Report(jobs=shown, sources=results, cfg=cfg, day=today, ai_note=ai_note)
+    data_dir = Path(args.state).parent
+    stats_store = stats.StatsStore(data_dir / "stats.json")
+    record = stats.run_record(today, results, all_jobs, matched, new, shown, cfg, outcome)
+    runs = stats_store.runs + [record]
+    tips = suggestions.generate(runs, cfg, today)
+    weekly_day = cfg.weekly_summary in ("daily", today.strftime("%A").lower())
+    stats_line = f"{len(all_jobs)} jobs scanned · {len(matched)} open matches · {len(new)} new · {len(shown)} sent"
+    report = Report(
+        jobs=shown, sources=results, cfg=cfg, day=today, ai_note=ai_note, stats_line=stats_line,
+        weekly=stats.week_summary(runs, cfg, today) if weekly_day else [],
+        tips=[t["text"] for t in tips if t["kind"] != "insight"][:3] if weekly_day else [],
+    )
     checked = [r for r in results if not r.skipped]
     all_sources_failed = bool(checked) and all(r.error for r in checked)
 
@@ -202,6 +213,11 @@ def run(argv: list[str] | None = None) -> int:
             store.add(job, today)
         store.prune(cfg.remember_days, today)
         store.save()
+        stats_store.add(record)
+        stats_store.suggestions = tips
+        stats_store.save()
+        hidden = {j.uid for j in new} - {j.uid for j in shown}
+        stats.append_jobs_log(data_dir / "jobs_log.csv", today, new, hidden, cfg)
 
     if not delivered or all_sources_failed:
         return 1

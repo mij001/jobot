@@ -626,6 +626,17 @@ sources:
     # LankaJobs – government, private and foreign jobs, newest first.
     max_pages: 8  # 24 jobs per page
 
+  itpro:
+    enabled: true
+    # ITPro.lk – IT job board; these pages carry embedded, IoT, hardware and
+    # network roles. "" = the latest jobs of every category.
+    categories: ["", hardware-networking, internship]
+
+  techjobs:
+    enabled: true
+    # TechJobs.lk – engineering/technical vacancies (latest on its homepage).
+    max_pages: 3
+
   rss:
     enabled: true
     # Any RSS/Atom feed of job adverts. WordPress job blogs have one at /feed.
@@ -633,6 +644,9 @@ sources:
       - name: Gazette.lk
         url: https://www.gazette.lk/feed
         pages: 5  # 10 posts per page
+      - name: FindMyJob.lk
+        url: https://findmyjob.lk/jobs/feed/
+        pages: 5
 
   company_pages:
     enabled: true
@@ -719,3 +733,11 @@ notify:
   #   group_by: level | subfield | site | none
   order_by: best_match
   group_by: level
+  # A "Your week" summary (new jobs, busiest sub-fields and sites, top
+  # employers) and up to 3 suggestions, added on this day: monday … sunday,
+  # daily, or off. Statistics are logged every run in data/stats.json and
+  # every new job in data/jobs_log.csv either way.
+  weekly_summary: monday
+  # Jobs the AI scores at least this high are listed as "Top picks" at the
+  # top of the message (0 = off).
+  top_picks_score: 8

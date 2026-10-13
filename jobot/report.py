@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from html import escape
 
@@ -28,12 +28,22 @@ class Report:
     cfg: Config
     day: date
     ai_note: str | None = None
+    stats_line: str | None = None
+    weekly: list[str] = field(default_factory=list)  # "your week" summary lines
+    tips: list[str] = field(default_factory=list)  # suggestions to show
 
     # -- shared helpers ---------------------------------------------------
 
     def groups(self) -> list[tuple[str | None, list[Job]]]:
         """Jobs grouped and sorted as set in notify.group_by / notify.order_by."""
         return group_jobs(self.jobs, self.cfg, self.day)
+
+    def top_picks(self) -> list[Job]:
+        score = self.cfg.top_picks_score
+        if not score:
+            return []
+        picks = [j for j in self.jobs if j.ai_score is not None and j.ai_score >= score]
+        return sorted(picks, key=lambda j: -j.ai_score)[:5]
 
     def subfield_labels(self, job: Job) -> str:
         labels = [sf.label for key in job.subfields if (sf := self.cfg.subfield(key))]
@@ -48,7 +58,7 @@ class Report:
         return f"{n} new EEE job{'s' if n != 1 else ''} in Sri Lanka – {when}"
 
     def source_summary(self) -> list[str]:
-        lines = [self.ai_note] if self.ai_note else []
+        lines = [x for x in (self.stats_line, self.ai_note) if x]
         for s in self.sources:
             if s.skipped:
                 lines.append(f"{s.name}: skipped ({s.skipped})")
@@ -81,10 +91,18 @@ class Report:
         header = f"🔌 <b>{escape(self.title)}</b>"
         footer = "<i>" + escape(" · ".join(self.source_summary())) + "</i>"
         blocks: list[str] = []
+        if picks := self.top_picks():
+            blocks.append("⭐ <b>Top picks for you</b>\n" + "\n".join(
+                f'• <a href="{escape(j.url, quote=True)}">{escape(j.title)}</a>'
+                f'{" – " + escape(j.company) if j.company else ""} ({j.ai_score}/10)' for j in picks))
         for label, jobs in self.groups():
             if label:
                 blocks.append(f"📂 <b>{escape(label)}</b> ({len(jobs)})")
             blocks.extend(self._telegram_job(j) for j in jobs)
+        if self.weekly:
+            blocks.append("📈 <b>Your week</b>\n" + "\n".join(escape(x) for x in self.weekly))
+        if self.tips:
+            blocks.append("💡 <b>Suggestions</b>\n" + "\n".join("• " + escape(t) for t in self.tips))
         blocks.append(footer)
 
         messages, current = [], header
@@ -101,6 +119,10 @@ class Report:
 
     def email_text(self) -> str:
         out = [self.title, ""]
+        if picks := self.top_picks():
+            out.append("== Top picks for you ==")
+            out.extend(f"* {j.title}{' – ' + j.company if j.company else ''} ({j.ai_score}/10): {j.url}" for j in picks)
+            out.append("")
         for label, jobs in self.groups():
             if label:
                 out.append(f"== {label} ({len(jobs)}) ==")
@@ -119,6 +141,10 @@ class Report:
                 out.append(f"  {j.source}: {j.url}")
                 out.extend(f"  {s}: {u}" for s, u in j.also_on)
                 out.append("")
+        if self.weekly:
+            out.extend(["== Your week ==", *self.weekly, ""])
+        if self.tips:
+            out.extend(["== Suggestions ==", *(f"* {t}" for t in self.tips), ""])
         out.append("Sources: " + " · ".join(self.source_summary()))
         return "\n".join(out)
 
@@ -127,6 +153,12 @@ class Report:
             '<div style="font-family:Arial,Helvetica,sans-serif;max-width:680px">',
             f'<h2 style="color:#1a3d6d">🔌 {escape(self.title)}</h2>',
         ]
+        if picks := self.top_picks():
+            items = "".join(
+                f'<li><a href="{escape(j.url, quote=True)}">{escape(j.title)}</a>'
+                f'{" – " + escape(j.company) if j.company else ""} <b>({j.ai_score}/10)</b></li>' for j in picks)
+            parts.append('<div style="background:#fff6d6;border-radius:12px;padding:10px 14px;margin:0 0 16px">'
+                         f'<b>⭐ Top picks for you</b><ul style="margin:6px 0 0;padding-left:20px">{items}</ul></div>')
         for label, jobs in self.groups():
             if label:
                 parts.append(f'<h3 style="border-bottom:1px solid #ccc;padding-bottom:4px">'
@@ -148,6 +180,12 @@ class Report:
                     f' · {" | ".join(links)}</span>{fit}'
                     '</div>'
                 )
+        if self.weekly:
+            parts.append('<h3 style="border-bottom:1px solid #ccc;padding-bottom:4px">📈 Your week</h3>'
+                         + "".join(f'<p style="margin:4px 0">{escape(x)}</p>' for x in self.weekly))
+        if self.tips:
+            parts.append('<h3 style="border-bottom:1px solid #ccc;padding-bottom:4px">💡 Suggestions</h3><ul>'
+                         + "".join(f"<li>{escape(t)}</li>" for t in self.tips) + "</ul>")
         summary = escape(" · ".join(self.source_summary()))
         parts.append(f'<p style="color:#888;font-size:12px">Sources: {summary}</p></div>')
         return "\n".join(parts)

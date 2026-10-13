@@ -12,6 +12,9 @@ Engineering** vacancies and sends the new ones to your **Telegram** and/or
 | [Rooster](https://rooster.jobs) | keyword searches limited to Sri Lanka |
 | [Observer Jobs](https://www.observerjobs.lk/vacancies) | all vacancies – many government posts. **Blocks GitHub's servers** too, so the daily run skips it (Gazette.lk covers most of the same notices) |
 | [LankaJobs](https://lankajobs.lk) | government, private and foreign jobs, newest first |
+| [ITPro.lk](https://itpro.lk) | latest jobs + Hardware & Networking and Internship pages (embedded, IoT, network roles) |
+| [TechJobs.lk](https://techjobs.lk) | latest engineering/technical vacancies |
+| [FindMyJob.lk](https://findmyjob.lk) | its jobs RSS feed |
 | [Gazette.lk](https://www.gazette.lk) + any RSS feed | government job notices; add more feeds in the settings |
 | Company careers pages | [CEB](https://www.ceb.lk/careers/en), [SLT-Mobitel](https://careers.slt.lk/) – add any employer's page |
 | [LinkedIn](https://www.linkedin.com/jobs) | public job search for Sri Lanka, last 7 days (partly rate-limited) |
@@ -32,7 +35,13 @@ Optional extras:
 * a **free AI reviewer** that scores every new job against a short profile
   of you, explains the score in one line, and hides poor fits;
 * a **settings web page** (Material You design, with your own colour)
-  where you flip switches instead of editing YAML.
+  where you flip switches instead of editing YAML, with a **statistics
+  dashboard** and **suggestions** you can apply in one tap.
+
+Every run also logs **statistics** (`data/stats.json`) and every new job
+(`data/jobs_log.csv` – opens in Excel / Google Sheets). Once a week the
+message adds a **"Your week"** summary and up to three **suggestions**, and
+jobs the AI scores 8/10 or higher appear as **⭐ Top picks** at the top.
 
 A message looks like this:
 
@@ -202,6 +211,31 @@ notify:
 
 `best_match` puts the highest AI score first (then newest). Try a one-off
 layout with `python -m jobot --dry-run --group-by site --order-by closing_soon`.
+
+### Statistics & suggestions
+
+Each run appends a record to `data/stats.json`: jobs scanned per site (or
+why a site failed / was skipped), open matches, new jobs, jobs sent, jobs
+the AI hid, new jobs by sub-field / level / site, **open jobs per sub-field
+including switched-off ones**, how many matches your level filter drops, and
+the companies hiring most. Every new job goes into `data/jobs_log.csv`
+(date, sent or hidden by AI, site, title, company, sub-fields, level, AI
+score and reason, closing date, link).
+
+From that history jobot suggests, for example:
+
+* switching on a sub-field or level that has many open jobs right now,
+* switching off a sub-field that hasn't matched anything in 30 days,
+* a site that keeps failing,
+* lowering the AI cut-off when it hides most jobs,
+* which fields and companies are busiest.
+
+The settings page shows all of this as charts (per day, by sub-field, site,
+level, top employers), the latest jobs, and the suggestions with an
+**Apply** button. In messages, `notify.weekly_summary` (default `monday`;
+or `daily` / `off`) adds the "Your week" block and suggestions, and
+`notify.top_picks_score` (default 8, `0` = off) sets the AI score for
+⭐ Top picks.
 
 ### More sites
 

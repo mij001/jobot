@@ -162,3 +162,19 @@ def test_live_config_is_valid():
     cfg = load_config(jobot_main.ROOT / "config.yaml")
     assert set(cfg.sources) <= set(SOURCES)
     assert cfg.enabled_subfields and cfg.enabled_sources()
+
+
+def test_run_logs_statistics(fake_env):
+    config, state, sent = fake_env
+    args = ["--config", str(config), "--state", str(state)]
+    jobot_main.run(["--dry-run", *args])
+    assert not (state.parent / "stats.json").exists()  # dry runs log nothing
+    jobot_main.run(args)
+    jobot_main.run(args)
+    data = json.loads((state.parent / "stats.json").read_text())
+    assert [r["new"] for r in data["runs"]] == [1, 0]
+    assert data["runs"][0]["sources"]["BrokenSite"]["error"].startswith("RuntimeError")
+    assert isinstance(data["suggestions"], list)
+    log = (state.parent / "jobs_log.csv").read_text().splitlines()
+    assert log[0].startswith("date,status,site,title") and "Embedded Engineer" in log[1] and len(log) == 2
+    assert "jobs scanned" in sent[0].email_text()

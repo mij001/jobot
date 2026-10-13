@@ -175,3 +175,21 @@ def test_company_page_subfield_survives_filtering(cfg, fixture_text):
     cfg.only_subfields(["power"])  # telecom switched off -> plain technician link no longer matches
     picked = select_jobs(company_pages.parse(fixture_text("slt_careers.html"), page), cfg)
     assert [j.title for j in picked] == []
+
+
+def test_itpro_parse(fixture_text):
+    from jobot.sources import itpro
+    jobs = itpro.parse(fixture_text("itpro.html"), "hardware-networking")
+    job = jobs[0]
+    assert (job.title, job.company) == ("Embedded Hardware Engineer", "Thakshana Technologies Private Limited")
+    assert job.url.startswith("https://itpro.lk/job/15081/")
+    assert job.posted == "2026-09-13" and job.source_id == "15081"
+    assert itpro.parse(fixture_text("itpro.html"), "internship")[0].level_hint == "internship"
+
+
+def test_techjobs_parse(fixture_text):
+    from jobot.sources import techjobs
+    [job] = techjobs.parse(fixture_text("techjobs.html"))
+    assert (job.source_id, job.title) == ("10938", "Material Engineers for Testing")
+    assert job.company == "Techjobs.lk for Project Teams" and job.location == "Nawala, Nugegoda"
+    assert job.url == "https://techjobs.lk/vacancy?vacancy_id=10938"

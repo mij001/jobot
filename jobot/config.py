@@ -20,6 +20,8 @@ ORDER_BY = {
     "company": "Company A–Z",
     "title": "Job title A–Z",
 }
+WEEKLY = {d: d.title() for d in
+          ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "daily", "off")}
 GROUP_BY = {
     "level": "Experience level",
     "subfield": "Sub-field",
@@ -82,6 +84,8 @@ class Config:
     remember_days: int = 60
     order_by: str = "best_match"
     group_by: str = "level"
+    weekly_summary: str = "monday"  # weekday name, or "off"
+    top_picks_score: int = 8  # AI score that makes a job a "top pick" (0 = off)
     ai: AIConfig = field(default_factory=AIConfig)
 
     @property
@@ -191,6 +195,8 @@ def parse_config(raw: dict[str, Any]) -> Config:
         remember_days=int(notify.get("remember_days", 60)),
         order_by=_choice(notify.get("order_by", "best_match"), ORDER_BY, "notify.order_by"),
         group_by=_choice(notify.get("group_by", "level"), GROUP_BY, "notify.group_by"),
+        weekly_summary=_choice(notify.get("weekly_summary", "monday"), WEEKLY, "notify.weekly_summary"),
+        top_picks_score=int(notify.get("top_picks_score", 8) or 0),
         ai=_parse_ai(raw.get("ai") or {}),
     )
 
