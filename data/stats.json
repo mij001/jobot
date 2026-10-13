@@ -127,13 +127,171 @@
     "hidden": 0,
     "error": "HTTP 503: [{\n  \"error\": {\n    \"code\": 503,\n    \"message\": \"This model is currently experiencing high demand. Spikes in d"
    }
+  },
+  {
+   "date": "2026-10-13",
+   "sources": {
+    "topjobs.lk": {
+     "scanned": 626
+    },
+    "XpressJobs": {
+     "skipped": "it blocks GitHub's servers"
+    },
+    "ikman.lk": {
+     "scanned": 233
+    },
+    "Rooster": {
+     "scanned": 578
+    },
+    "Observer Jobs": {
+     "skipped": "it blocks GitHub's servers"
+    },
+    "LankaJobs": {
+     "scanned": 83
+    },
+    "ITPro.lk": {
+     "scanned": 81
+    },
+    "TechJobs.lk": {
+     "scanned": 7
+    },
+    "RSS feeds": {
+     "scanned": 100
+    },
+    "Company pages": {
+     "scanned": 1
+    },
+    "LinkedIn": {
+     "scanned": 42
+    }
+   },
+   "scanned": 1751,
+   "matched": 63,
+   "new": 63,
+   "sent": 61,
+   "new_by_subfield": {
+    "critical_power": 1,
+    "general": 30,
+    "security_systems": 2,
+    "electronics": 10,
+    "lifts": 1,
+    "maintenance": 4,
+    "networking": 7,
+    "telecom": 2,
+    "testing": 2,
+    "technical_sales": 1,
+    "teaching": 2,
+    "railway": 1
+   },
+   "new_by_level": {
+    "entry": 20,
+    "mid": 20,
+    "internship": 5,
+    "unknown": 18
+   },
+   "new_by_qualification": {
+    "degree": 48,
+    "unknown": 15
+   },
+   "new_by_site": {
+    "topjobs.lk": 31,
+    "Rooster": 19,
+    "LankaJobs": 1,
+    "ITPro.lk": 7,
+    "LinkedIn": 5
+   },
+   "open_by_subfield": {
+    "building_services": 34,
+    "critical_power": 1,
+    "security_systems": 5,
+    "general": 73,
+    "automation": 29,
+    "renewable": 9,
+    "power": 5,
+    "electronics": 18,
+    "maintenance": 11,
+    "biomedical": 2,
+    "technical_sales": 4,
+    "teaching": 5,
+    "lifts": 1,
+    "networking": 9,
+    "marine": 1,
+    "telecom": 3,
+    "testing": 6,
+    "broadcast": 1,
+    "railway": 1
+   },
+   "open_level_filtered": {
+    "senior": 23,
+    "management": 4
+   },
+   "open_qualification_filtered": {
+    "diploma": 19,
+    "vocational": 12
+   },
+   "postings": {
+    "opened": 59,
+    "cached": 0,
+    "posters": 48,
+    "pdfs": 0,
+    "ai": 0,
+    "failed": 1,
+    "left": 221
+   },
+   "top_companies": [
+    [
+     "Manpower Sri Lanka",
+     8
+    ],
+    [
+     "NORVI Controllers",
+     3
+    ],
+    [
+     "Maga Engineering (Pvt) Ltd",
+     2
+    ],
+    [
+     "J.N Interiors (Pvt) Ltd",
+     2
+    ],
+    [
+     "vauxhall.co",
+     2
+    ],
+    [
+     "Likuid Ventures",
+     2
+    ],
+    [
+     "Atlas Labs",
+     2
+    ],
+    [
+     "Organia Innovations Labs",
+     2
+    ],
+    [
+     "V S Information Systems (Pvt) Ltd",
+     1
+    ],
+    [
+     "Jobfactory",
+     1
+    ]
+   ],
+   "ai": {
+    "checked": 20,
+    "hidden": 2,
+    "error": "no model available – HTTP 404: This model models/gemini-2.5-flash is no longer available to new users. Please update your…"
+   }
   }
  ],
  "suggestions": [
   {
    "id": "enable_subfield:building_services",
    "kind": "tip",
-   "text": "Building Services / MEP (Electrical) has 30 open jobs right now, but it's switched off.",
+   "text": "Building Services / MEP (Electrical) has 34 open jobs right now, but it's switched off.",
    "action": {
     "type": "enable_subfield",
     "key": "building_services",
@@ -143,7 +301,7 @@
   {
    "id": "enable_subfield:automation",
    "kind": "tip",
-   "text": "Automation, Control & Instrumentation has 20 open jobs right now, but it's switched off.",
+   "text": "Automation, Control & Instrumentation has 29 open jobs right now, but it's switched off.",
    "action": {
     "type": "enable_subfield",
     "key": "automation",
@@ -153,7 +311,7 @@
   {
    "id": "enable_subfield:renewable",
    "kind": "tip",
-   "text": "Renewable Energy / Solar has 7 open jobs right now, but it's switched off.",
+   "text": "Renewable Energy / Solar has 9 open jobs right now, but it's switched off.",
    "action": {
     "type": "enable_subfield",
     "key": "renewable",
@@ -163,7 +321,7 @@
   {
    "id": "enable_level:senior",
    "kind": "tip",
-   "text": "14 Senior jobs match your sub-fields, but that level is switched off.",
+   "text": "23 Senior jobs match your sub-fields, but that level is switched off.",
    "action": {
     "type": "enable_level",
     "key": "senior",
@@ -171,15 +329,35 @@
    }
   },
   {
+   "id": "enable_qualification:diploma",
+   "kind": "tip",
+   "text": "19 open jobs in your sub-fields ask for diploma level qualifications, which you've switched off.",
+   "action": {
+    "type": "enable_qualification",
+    "key": "diploma",
+    "label": "Show Diploma jobs"
+   }
+  },
+  {
+   "id": "enable_qualification:vocational",
+   "kind": "tip",
+   "text": "12 open jobs in your sub-fields ask for vocational level qualifications, which you've switched off.",
+   "action": {
+    "type": "enable_qualification",
+    "key": "vocational",
+    "label": "Show Vocational jobs"
+   }
+  },
+  {
    "id": "busiest",
    "kind": "insight",
-   "text": "Most open EEE jobs right now: General Electrical / Electronic (62), Building Services / MEP (Electrical) (30), Automation, Control & Instrumentation (20).",
+   "text": "Most open EEE jobs right now: General Electrical / Electronic (73), Building Services / MEP (Electrical) (34), Automation, Control & Instrumentation (29).",
    "action": null
   },
   {
    "id": "hiring",
    "kind": "insight",
-   "text": "Hiring the most: Manpower Sri Lanka (22), Maga Engineering (Pvt) Ltd (3), NORVI Controllers (3).",
+   "text": "Hiring the most: Manpower Sri Lanka (8), NORVI Controllers (3), Maga Engineering (Pvt) Ltd (2).",
    "action": null
   }
  ]
