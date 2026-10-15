@@ -29,7 +29,7 @@ log = logging.getLogger(__name__)
 PROVIDERS = {
     "gemini": {
         "url": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-        "models": ["gemini-flash-latest", "gemini-3.8-flash", "gemini-2.5-flash"],
+        "models": ["gemini-flash-latest", "gemini-3.8-flash", "gemini-flash-lite-latest"],
         "vision": True,  # can read poster images
     },
     "groq": {
@@ -78,6 +78,9 @@ class ReviewResult:
         if self.error:
             text += f" (stopped early: {self.error})"
         return text
+
+
+BUSY_WAIT = 20  # seconds before retrying a model that answered 5xx
 
 
 class _ModelGone(Exception):
@@ -142,6 +145,10 @@ def _ask(url: str, model: str, key: str, messages: list[dict], post, sleep) -> s
             wait = int(resp.headers.get("retry-after") or 60)
             log.info("AI rate limit hit; waiting %ds", wait)
             sleep(min(wait, 120))
+            continue
+        if resp.status_code in (500, 502, 503, 504) and attempt == 0:  # "high demand" spikes pass quickly
+            log.info("%s is busy (HTTP %d); trying it once more in %ds", model, resp.status_code, BUSY_WAIT)
+            sleep(BUSY_WAIT)
             continue
         if resp.status_code in (500, 502, 503, 504) or (resp.status_code in (400, 404) and "model" in resp.text.lower()):
             raise _ModelGone(f"{model}: {_error_text(resp)}")

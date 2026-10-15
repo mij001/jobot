@@ -1159,7 +1159,8 @@ function lockVault() {
 }
 function showStats() {
   const has = stats.runs.length > 0;
-  $("statsEmpty").textContent = vault.key ? "No statistics yet – they appear after the next run." : "Unlock your jobs above to see statistics.";
+  $("statsEmpty").textContent = !vault.meta ? "Statistics appear here once the dashboard password is set up (see Your jobs above)."
+    : vault.key ? "No statistics yet – they appear after the next run." : "Unlock your jobs above to see statistics.";
   $("statsEmpty").classList.toggle("hidden", has); $("statsBody").classList.toggle("hidden", !has);
   if (has) renderStats();
 }

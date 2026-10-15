@@ -134,14 +134,24 @@ def test_poster_reader_sends_image_and_respects_budget(cfg):
 def test_overloaded_model_falls_back_and_error_is_short(cfg):
     job = make_jobs(1)[0]
     overloaded = FakeResp(503, body=[{"error": {"code": 503, "message": "This model is currently experiencing\n high demand. Spikes in demand are usually temporary."}}])
-    models = []
+    models, waits = [], []
 
     def post(url, json, headers, timeout):
         models.append(json["model"])
-        return overloaded if len(models) == 1 else reply([{"id": job.uid, "score": 7, "level": "entry", "reason": "ok"}])
+        return overloaded if len(models) <= 2 else reply([{"id": job.uid, "score": 7, "level": "entry", "reason": "ok"}])
 
-    result = ai.review([job], cfg, {"AI_API_KEY": "k"}, post=post, sleep=lambda s: None)
-    assert models == ["gemini-flash-latest", "gemini-3.8-flash"] and job.ai_score == 7 and not result.error
+    result = ai.review([job], cfg, {"AI_API_KEY": "k"}, post=post, sleep=waits.append)
+    # A busy model gets one more try after a pause, then the next model is used.
+    assert models == ["gemini-flash-latest", "gemini-flash-latest", "gemini-3.8-flash"] and waits == [ai.BUSY_WAIT]
+    assert job.ai_score == 7 and not result.error
+
+    # A brief spike: the same model answers on the second try.
+    calls = []
+    again = make_jobs(1)[0]
+    ai.review([again], cfg, {"AI_API_KEY": "k"}, sleep=lambda s: None, post=lambda url, json, headers, timeout:
+              calls.append(json["model"]) or (overloaded if len(calls) == 1 else reply(
+                  [{"id": again.uid, "score": 6, "level": "mid", "reason": "ok"}])))
+    assert calls == ["gemini-flash-latest"] * 2 and again.ai_score == 6
 
     result = ai.review(make_jobs(1), cfg, {"AI_API_KEY": "k"}, post=lambda *a, **k: overloaded, sleep=lambda s: None)
     assert result.error.startswith("no model available – HTTP 503: This model is currently")
