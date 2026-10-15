@@ -574,13 +574,158 @@
     "hidden": 0,
     "error": "HTTPSConnectionPool(host='generativelanguage.googleapis.com', port=443): Read timed out. (read timeout=120)"
    }
+  },
+  {
+   "date": "2026-10-15",
+   "sources": {
+    "topjobs.lk": {
+     "scanned": 675
+    },
+    "XpressJobs": {
+     "skipped": "it blocks GitHub's servers"
+    },
+    "ikman.lk": {
+     "scanned": 240
+    },
+    "Rooster": {
+     "scanned": 580
+    },
+    "Observer Jobs": {
+     "skipped": "it blocks GitHub's servers"
+    },
+    "LankaJobs": {
+     "scanned": 92
+    },
+    "ITPro.lk": {
+     "scanned": 83
+    },
+    "TechJobs.lk": {
+     "scanned": 7
+    },
+    "RSS feeds": {
+     "scanned": 100
+    },
+    "Company pages": {
+     "scanned": 1
+    },
+    "LinkedIn": {
+     "scanned": 42
+    }
+   },
+   "scanned": 1820,
+   "matched": 63,
+   "new": 4,
+   "sent": 4,
+   "new_by_subfield": {
+    "general": 2,
+    "telecom": 2
+   },
+   "new_by_level": {
+    "entry": 1,
+    "mid": 2,
+    "unknown": 1
+   },
+   "new_by_qualification": {
+    "degree": 3,
+    "unknown": 1
+   },
+   "new_by_site": {
+    "topjobs.lk": 2,
+    "ITPro.lk": 1,
+    "LinkedIn": 1
+   },
+   "open_by_subfield": {
+    "building_services": 45,
+    "general": 79,
+    "automation": 37,
+    "electronics": 28,
+    "critical_power": 1,
+    "biomedical": 2,
+    "renewable": 8,
+    "power": 4,
+    "maintenance": 14,
+    "technical_sales": 4,
+    "security_systems": 5,
+    "teaching": 5,
+    "lifts": 1,
+    "telecom": 6,
+    "marine": 1,
+    "testing": 6,
+    "networking": 8,
+    "broadcast": 1,
+    "railway": 1
+   },
+   "open_level_filtered": {
+    "senior": 18,
+    "management": 4
+   },
+   "open_qualification_filtered": {
+    "diploma": 24,
+    "vocational": 13
+   },
+   "postings": {
+    "opened": 60,
+    "cached": 101,
+    "posters": 17,
+    "pdfs": 0,
+    "ai": 0,
+    "failed": 0,
+    "left": 50
+   },
+   "top_companies": [
+    [
+     "Manpower Sri Lanka",
+     8
+    ],
+    [
+     "Maga Engineering (Pvt) Ltd",
+     3
+    ],
+    [
+     "NORVI Controllers",
+     3
+    ],
+    [
+     "Maritime International Limited",
+     2
+    ],
+    [
+     "vauxhall.co",
+     2
+    ],
+    [
+     "Likuid Ventures",
+     2
+    ],
+    [
+     "Atlas Labs",
+     2
+    ],
+    [
+     "Organia Innovations Labs",
+     2
+    ],
+    [
+     "Abans Electricals PLC",
+     1
+    ],
+    [
+     "Arpico Energry",
+     1
+    ]
+   ],
+   "ai": {
+    "checked": 0,
+    "hidden": 0,
+    "error": "HTTPSConnectionPool(host='generativelanguage.googleapis.com', port=443): Read timed out. (read timeout=120)"
+   }
   }
  ],
  "suggestions": [
   {
    "id": "enable_subfield:building_services",
    "kind": "tip",
-   "text": "Building Services / MEP (Electrical) has 41 open jobs right now, but it's switched off.",
+   "text": "Building Services / MEP (Electrical) has 45 open jobs right now, but it's switched off.",
    "action": {
     "type": "enable_subfield",
     "key": "building_services",
@@ -590,7 +735,7 @@
   {
    "id": "enable_subfield:automation",
    "kind": "tip",
-   "text": "Automation, Control & Instrumentation has 30 open jobs right now, but it's switched off.",
+   "text": "Automation, Control & Instrumentation has 37 open jobs right now, but it's switched off.",
    "action": {
     "type": "enable_subfield",
     "key": "automation",
@@ -610,7 +755,7 @@
   {
    "id": "enable_level:senior",
    "kind": "tip",
-   "text": "16 Senior jobs match your sub-fields, but that level is switched off.",
+   "text": "18 Senior jobs match your sub-fields, but that level is switched off.",
    "action": {
     "type": "enable_level",
     "key": "senior",
@@ -620,7 +765,7 @@
   {
    "id": "enable_qualification:diploma",
    "kind": "tip",
-   "text": "23 open jobs in your sub-fields ask for diploma level qualifications, which you've switched off.",
+   "text": "24 open jobs in your sub-fields ask for diploma level qualifications, which you've switched off.",
    "action": {
     "type": "enable_qualification",
     "key": "diploma",
@@ -630,7 +775,7 @@
   {
    "id": "enable_qualification:vocational",
    "kind": "tip",
-   "text": "14 open jobs in your sub-fields ask for vocational level qualifications, which you've switched off.",
+   "text": "13 open jobs in your sub-fields ask for vocational level qualifications, which you've switched off.",
    "action": {
     "type": "enable_qualification",
     "key": "vocational",
@@ -640,13 +785,13 @@
   {
    "id": "busiest",
    "kind": "insight",
-   "text": "Most open EEE jobs right now: General Electrical / Electronic (78), Building Services / MEP (Electrical) (41), Automation, Control & Instrumentation (30).",
+   "text": "Most open EEE jobs right now: General Electrical / Electronic (79), Building Services / MEP (Electrical) (45), Automation, Control & Instrumentation (37).",
    "action": null
   },
   {
    "id": "hiring",
    "kind": "insight",
-   "text": "Hiring the most: Manpower Sri Lanka (8), Maga Engineering (Pvt) Ltd (4), NORVI Controllers (3).",
+   "text": "Hiring the most: Manpower Sri Lanka (8), Maga Engineering (Pvt) Ltd (3), NORVI Controllers (3).",
    "action": null
   }
  ]
