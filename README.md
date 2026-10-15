@@ -42,17 +42,21 @@ Optional extras:
 
 * a **free AI reviewer** that scores every new job against a short profile
   of you, explains the score in one line, and hides poor fits;
-* a **settings web page** (Material You design, with your own colour)
-  where you flip switches instead of editing YAML, with a **statistics
-  dashboard** and **suggestions** you can apply in one tap.
+* a **settings web page** (Material You design, or an **Apple-style**
+  look, with your own colour; installable on your phone's home screen)
+  where you flip switches instead of editing YAML, with a **dashboard** and
+  **suggestions** you can apply in one tap;
+* an **AI career coach** that reads your resume, shows which skills
+  employers ask for that you lack, suggests portfolio projects and tells you
+  how well each job fits your resume.
 
 Every run also saves **statistics** and every new job to a
-**password-protected dashboard** on the settings page: browse past jobs
-sorted by importance (Top picks → Good fits → Worth a look → Low priority),
-and keep your own **shortlist** (shortlisted / applied / dismissed). Once a
-week the message adds a **"Your week"** summary and up to three
-**suggestions**, and jobs the AI scores 8/10 or higher appear as **⭐ Top
-picks** at the top.
+**password-protected dashboard** on the settings page, with four views:
+**Focus** (what needs you today), **Jobs** (everything, by importance, with
+your own shortlist), **Data** (charts and tables) and **Coach** (resume
+analysis, skills to build, portfolio projects). Once a week the message adds
+a **"Your week"** summary and up to three **suggestions**, and jobs the AI
+scores 8/10 or higher appear as **⭐ Top picks** at the top.
 
 A message looks like this:
 
@@ -121,6 +125,13 @@ Prefer Groq? Get a free key at <https://console.groq.com/keys>, store it as
 `AI_API_KEY` and set `ai.provider: groq`. Any other OpenAI-compatible
 service works with an `AI_BASE_URL` secret plus `ai.models`.
 
+Two kinds of work use two kinds of model: the **daily scoring** uses a fast
+model (`ai.models`), while the heavier **career coach** work (resume analysis,
+project ideas, preparing for a job) uses `ai.smart_models` – left blank it
+tries Gemini's best free model (`gemini-pro-latest`) first and falls back to
+the best Flash model if Pro isn't free on your key. The report names the
+model that answered. A busy model (503) is retried once after 20 seconds.
+
 If the key is missing, the free quota runs out or the AI answers nonsense,
 the run carries on with the plain keyword results – nothing is lost.
 
@@ -141,8 +152,14 @@ edit their keywords (as chips), add your own sub-fields, set filters, turn
 sites on and off, add RSS feeds and company careers pages, choose how
 messages are grouped and ordered, set up the AI reviewer, and start a run
 (or a test run that sends nothing). Saving commits `config.yaml`, keeping
-its comments. The palette button picks the page's colour, Material You
-style – light, dark or automatic.
+its comments.
+
+Change a setting and a small **Save** pill appears at the bottom (with
+*Discard*); it is hidden the rest of the time. The ▶ button in the top bar
+opens the **Run** menu: *Run now*, *Test run* (sends nothing) and *Refresh
+career report*. The palette button picks light / dark / automatic, the
+colour, and the **style** – *Material You* or *Apple* (system fonts, frosted
+bars, rounded grouped cards, iOS-style switches).
 
 ### 5. (Optional) Password-protected history
 
@@ -295,23 +312,43 @@ layout with `python -m jobot --dry-run --group-by site --order-by closing_soon`.
 
 ### Your jobs dashboard
 
-Open the settings page and type your `DASHBOARD_PASSWORD` under **Your jobs**
-(tick *Stay unlocked on this device* on your own phone or computer):
+Open the settings page and type your `DASHBOARD_PASSWORD` under **Dashboard**
+(tick *Stay unlocked on this device* on your own phone or computer). Press
+**Lock** to wipe everything from the page again.
 
-* **Importance** – each job is filed as **Top picks** (AI score ≥
-  `notify.top_picks_score`, 8 by default), **Good fits** (6–7), **Worth a
-  look** (4–5) or **Low priority** (held back by the AI). Without the AI,
-  jobs are filed by how clearly the advert matches: an EEE title plus a
-  stated qualification and level is a good fit.
-* **Your shortlist** – tap *Shortlist*, *Applied* or *Dismiss* on a job. The
-  tabs (*To review · Shortlist · Applied · Dismissed · All*) show what you've
-  marked, still grouped by importance. Marks are saved encrypted too, from
-  the page, so they follow you between phone and computer. Saving needs the
-  GitHub token from step 4, like saving settings does.
-* Search by title, company, place or field; filter by how long ago the job
-  was seen; hide jobs whose closing date has passed. Each job shows what the
-  advert asks for, the AI's one-line reason, the closing date and the e-mail
-  to apply to.
+**Focus** – the page to open each morning: how many jobs are waiting for a
+decision, jobs **closing soon**, **Top picks**, your **shortlist**, what you
+**applied** to, the **skills to build** and **suggestions**. *Review one by
+one* walks through the list with the keyboard: **S** shortlist, **D**
+dismiss, **N** next, **←/→** move, **Esc** leave.
+
+**Jobs** – every job ever sent, filed by importance: **Top picks** (AI score ≥
+`notify.top_picks_score`, 8 by default), **Good fits** (6–7), **Worth a look**
+(4–5) or **Low priority** (held back by the AI). Without the AI, jobs are
+filed by how clearly the advert matches. A job from a company on your
+`watch_companies` list moves up one tier. Tap *Shortlist*, *Applied* or
+*Dismiss*, and add a private **note**; the tabs (*To review · Shortlist ·
+Applied · Dismissed · All*) show what you've marked. Search by title, company,
+place, field or skill; filter by period or by a skill; sort by importance,
+newest, closing date or **resume match**. Marks and notes are saved encrypted
+too, from the page (batched into one commit a couple of seconds after your
+last tap), so they follow you between phone and computer. Saving needs the
+GitHub token from step 4. **Prepare** on a job asks the AI for a tailored cover
+letter, resume bullets, likely interview questions and a study plan (the
+result shows up under the job and under *Coach*).
+
+**Data** – the numbers, with a period switch (7 / 30 / 90 days / all): six KPI
+tiles with the change against the previous period, jobs per day stacked by
+importance, your pipeline (found → sent → reviewed → shortlisted → applied),
+the AI score distribution, jobs by weekday, by site, sub-field, level,
+qualification, employer and place, **skills employers ask for**, jobs by
+closing date, open jobs per sub-field (including switched-off ones), what
+your filters hide, **site health** over the last runs, and how the adverts
+were read. Every chart has a *Table* toggle with the same numbers. At the
+bottom is a sortable table of all jobs with **Download CSV** (for a
+spreadsheet) and **Download everything (JSON)**.
+
+**Coach** – see [Career coach](#career-coach).
 
 How it is protected: the browser derives a key from your password
 (PBKDF2-SHA256, 600 000 rounds) and decrypts with AES-256-GCM; the password is
@@ -327,6 +364,61 @@ matters, make the repository private (GitHub Pages then needs a paid plan).
 Changing the password: set the new secret, then delete the `data/history/`
 folder – the old history can't be read with a different password. Lost
 password: same thing.
+
+**On your phone:** open the page in Safari / Chrome and choose *Add to Home
+Screen* – it opens full-screen with its own icon.
+
+### Career coach
+
+Dashboard → **Coach**. Paste your resume (or upload a PDF, DOCX or text file,
+up to 1 MB) and press **Save encrypted**; it is stored in
+`data/history/resume.enc.json`, readable only with your password. Then:
+
+* **Analyse** (needs the token from step 4 and the AI key): asks the daily
+  workflow to build a **career report** in about two minutes; press *Refresh*
+  afterwards. The same report is rebuilt automatically every week
+  (`coach.weekly_report`, Sunday by default).
+* The report shows **how your resume reads** (level, strengths, gaps, what to
+  change, a suggested headline), the **skills employers ask for** in the last
+  90 days with the ones your resume shows and the ones it doesn't,
+  **portfolio projects** to build (why, steps, what to publish, how to show
+  it on your resume), and your **best-fit jobs** with what's missing and how to
+  tailor the application. The AI's one-line summary of you is also used when it
+  scores each day's jobs.
+* Every job card shows a **resume match %** (the skills it asks for that your
+  resume mentions). That is computed locally, with no AI.
+
+```yaml
+coach:
+  enabled: true
+  weekly_report: sunday   # monday … sunday | daily | off
+  window_days: 90         # how many days of adverts the skill demand covers
+  projects: 4             # how many project ideas
+  extra_skills: []        # skills of your own to look for
+  send_resume: true       # false = the resume never goes to the AI
+```
+
+**Privacy:** the text sent to the AI has your name, e-mail, phone, NIC,
+links and address stripped first. The AI is Google's free Gemini tier (or
+Groq), and Google may use what is sent on the free tier to improve its
+products – set `coach.send_resume: false` to keep the resume text out of the
+AI entirely; you still get skill demand, gaps and resume match, which are
+computed here. Resume and adverts are treated as data, never as instructions.
+
+One-off from the command line: `python -m jobot --career` (rebuild the
+report) and `python -m jobot --prepare <job id>` (the id is shown on the
+job card). In GitHub Actions use *Run workflow* → `career` or `prepare`.
+
+### Companies, reminders and the weekly skills line
+
+* `watch_companies: [CEB, Dialog, "SLT*"]` marks jobs from those employers
+  with 👀 and moves them up one importance tier; `avoid_companies: [...]`
+  drops jobs from employers you never want. Both are in the *Filters* card.
+* Messages (Telegram, e-mail) add a **⏰ Closing soon – your shortlist** block
+  for jobs you shortlisted that close within 3 days – even on days with no new
+  jobs.
+* When you have a coach report, the weekly summary adds the **skills worth
+  building** and one **project idea** from it.
 
 ### Statistics & suggestions
 
@@ -388,6 +480,8 @@ python -m jobot --dry-run --all --levels internship,entry --subfields electronic
 python -m jobot --dry-run --no-ai             # skip the AI reviewer
 python -m jobot --dry-run --qualifications degree,diploma
 python -m jobot --dry-run --no-read           # don't open the adverts (faster)
+python -m jobot --career                      # rebuild the career report (needs DASHBOARD_PASSWORD + AI_API_KEY)
+python -m jobot --prepare <job id>           # cover letter, bullets, interview questions for one job
 ```
 
 With `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` (or the `SMTP_*` variables) set,
