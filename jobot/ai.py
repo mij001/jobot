@@ -133,7 +133,7 @@ def parse_reply(text: str) -> list[dict]:
     start, end = text.find("{"), text.rfind("}")
     if start < 0 or end <= start:
         raise ValueError("reply contained no JSON object")
-    data = json.loads(text[start:end + 1])
+    data = json.loads(text[start:end + 1], strict=False)  # models put raw line breaks inside strings
     results = data.get("results") if isinstance(data, dict) else None
     if not isinstance(results, list):
         raise ValueError("reply JSON has no 'results' list")
@@ -181,7 +181,7 @@ def parse_object(text: str) -> dict:
     start, end = text.find("{"), text.rfind("}")
     if start < 0 or end <= start:
         raise ValueError("reply contained no JSON object")
-    data = json.loads(text[start:end + 1])
+    data = json.loads(text[start:end + 1], strict=False)  # models put raw line breaks inside strings
     if not isinstance(data, dict):
         raise ValueError("reply JSON is not an object")
     return data

@@ -231,3 +231,10 @@ def test_pro_without_free_quota_falls_back_without_waiting(cfg):
                                  used.append(json["model"]) or (limited if json["model"] == "gemini-pro-latest" else
                                  FakeResp(body={"choices": [{"message": {"content": '{"ok": 1}'}}]})))
     assert data == {"ok": 1} and used == ["gemini-pro-latest", "gemini-pro-latest", "gemini-3.8-flash"]
+
+
+def test_replies_with_raw_line_breaks_inside_strings_are_still_read():
+    """A cover letter or digest with a literal newline in a JSON string made the reply 'not understood'."""
+    text = '```json\n{"digest": "first line\nsecond line", "n": 2}\n```'
+    assert ai.parse_object(text) == {"digest": "first line\nsecond line", "n": 2}
+    assert ai.parse_reply('{"results": [{"id": "a", "reason": "x\ny"}]}') == [{"id": "a", "reason": "x\ny"}]
