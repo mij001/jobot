@@ -1,25 +1,16 @@
-"""Job statistics: one record per run in data/stats.json, plus a CSV log of
-every new job (data/jobs_log.csv) that opens straight in Excel / Sheets."""
+"""Job statistics: one record per run (kept in the encrypted history, see history.py)."""
 
 from __future__ import annotations
 
-import csv
-import json
 from collections import Counter
 from dataclasses import replace
 from datetime import date
-from pathlib import Path
 
 from .config import Config
 from .filters import (classify_level, classify_qualifications, is_excluded, level_allowed, match_subfields,
                       qualification_allowed)
 from .models import Job
 from .report import SourceResult
-
-MAX_RUNS = 400
-MAX_LOG_ROWS = 5000
-LOG_FIELDS = ["date", "status", "site", "title", "company", "location", "subfields", "level",
-              "qualification", "ai_score", "ai_reason", "closing", "url"]
 
 
 def open_jobs_by_subfield(jobs: list[Job], cfg: Config) -> tuple[Counter, Counter, Counter]:
@@ -77,56 +68,6 @@ def run_record(day: date, sources: list[SourceResult], scanned: list[Job], match
     if ai_result is not None:
         record["ai"] = {"checked": ai_result.scored, "hidden": ai_result.hidden, "error": ai_result.error}
     return record
-
-
-class StatsStore:
-    def __init__(self, path: str | Path):
-        self.path = Path(path)
-        self.runs: list[dict] = []
-        self.suggestions: list[dict] = []
-        if self.path.exists():
-            data = json.loads(self.path.read_text(encoding="utf-8") or "{}")
-            self.runs = list(data.get("runs", []))
-            self.suggestions = list(data.get("suggestions", []))
-
-    def add(self, record: dict) -> None:
-        self.runs.append(record)
-        self.runs = self.runs[-MAX_RUNS:]
-
-    def save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        data = {"runs": self.runs, "suggestions": self.suggestions}
-        self.path.write_text(json.dumps(data, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
-
-
-def append_jobs_log(path: str | Path, day: date, new: list[Job], hidden_uids: set[str], cfg: Config) -> None:
-    path = Path(path)
-    rows: list[dict] = []
-    if path.exists():
-        with open(path, newline="", encoding="utf-8") as fh:
-            rows = list(csv.DictReader(fh))
-    for job in new:
-        rows.append({
-            "date": day.isoformat(),
-            "status": "hidden by AI" if job.uid in hidden_uids else "sent",
-            "site": job.source,
-            "title": job.title,
-            "company": job.company,
-            "location": job.location,
-            "subfields": "; ".join(sf.label for k in job.subfields if (sf := cfg.subfield(k))),
-            "level": (cfg.level(job.level).label if job.level and cfg.level(job.level) else "not stated"),
-            "qualification": cfg.qualification_label(job.qualifications) or "not stated",
-            "ai_score": "" if job.ai_score is None else job.ai_score,
-            "ai_reason": job.ai_reason,
-            "closing": job.closing,
-            "url": job.url,
-        })
-    rows = rows[-MAX_LOG_ROWS:]
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=LOG_FIELDS, extrasaction="ignore")
-        writer.writeheader()
-        writer.writerows(rows)
 
 
 def week_summary(runs: list[dict], cfg: Config, today: date, days: int = 7) -> list[str]:

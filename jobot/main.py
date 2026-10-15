@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import ai, notifiers, postings, stats, suggestions
+from .history import History
 from .config import GROUP_BY, ORDER_BY, Config, ConfigError, load_config
 from .filters import select_jobs
 from .http import Http
@@ -132,8 +133,14 @@ def _short_error(exc: Exception) -> str:
     return f"{type(exc).__name__}: {str(exc)[:120]}"
 
 
+def dashboard_url(env: dict[str, str]) -> str | None:
+    """The settings/history page on GitHub Pages, when running from GitHub."""
+    owner, _, repo = env.get("GITHUB_REPOSITORY", "").partition("/")
+    return f"https://{owner}.github.io/{repo}/" if owner and repo else None
+
+
 def _redact(text: str, env: dict[str, str]) -> str:
-    for key in ("TELEGRAM_BOT_TOKEN", "SMTP_PASSWORD", "AI_API_KEY"):
+    for key in ("TELEGRAM_BOT_TOKEN", "SMTP_PASSWORD", "AI_API_KEY", "DASHBOARD_PASSWORD"):
         if env.get(key):
             text = text.replace(env[key], "***")
     return text
@@ -196,15 +203,19 @@ def run(argv: list[str] | None = None) -> int:
         else:
             log.info("AI review is on but AI_API_KEY isn't set – skipping it")
 
-    stats_store = stats.StatsStore(data_dir / "stats.json")
+    history = History.open(data_dir, env)  # encrypted with DASHBOARD_PASSWORD; empty without it
+    history.import_legacy(data_dir, cfg)
+    if history.note:
+        log.info("%s", history.note)
     record = stats.run_record(today, results, all_jobs, matched, new, shown, cfg, outcome, read_stats)
-    runs = stats_store.runs + [record]
+    runs = history.runs + [record]
     tips = suggestions.generate(runs, cfg, today)
     weekly_day = cfg.weekly_summary in ("daily", today.strftime("%A").lower())
     stats_line = f"{len(all_jobs)} jobs scanned · {len(matched)} open matches · {len(new)} new · {len(shown)} sent"
     report = Report(
         jobs=shown, sources=results, cfg=cfg, day=today, ai_note=ai_note, stats_line=stats_line,
         read_note=read_stats.summary if read_stats else None,
+        history_note=history.note if weekly_day else None, dashboard_url=dashboard_url(env),
         weekly=stats.week_summary(runs, cfg, today) if weekly_day else [],
         tips=[t["text"] for t in tips if t["kind"] != "insight"][:3] if weekly_day else [],
     )
@@ -240,11 +251,10 @@ def run(argv: list[str] | None = None) -> int:
             store.add(job, today)
         store.prune(cfg.remember_days, today)
         store.save()
-        stats_store.add(record)
-        stats_store.suggestions = tips
-        stats_store.save()
-        hidden = {j.uid for j in new} - {j.uid for j in shown}
-        stats.append_jobs_log(data_dir / "jobs_log.csv", today, new, hidden, cfg)
+        history.add_run(record)
+        history.suggestions = tips
+        history.add_jobs(today, new, {j.uid for j in new} - {j.uid for j in shown}, cfg)
+        history.save()
 
     if not delivered or all_sources_failed:
         return 1

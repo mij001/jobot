@@ -24,7 +24,7 @@ def test_open_jobs_count_switched_off_subfields(cfg):
     assert dict(qual_filtered) == {"diploma": 1}  # ... and a diploma-only advert (degree only by default)
 
 
-def test_run_record_and_store(tmp_path, cfg):
+def test_run_record(cfg):
     new = [job("Embedded Engineer", subfields=["electronics"], level="entry", company="ChipCo")]
     sources = [SourceResult("topjobs.lk", 10), SourceResult("LinkedIn", error="HTTP 429"),
                SourceResult("XpressJobs", skipped="blocks GitHub")]
@@ -33,23 +33,6 @@ def test_run_record_and_store(tmp_path, cfg):
                                  "XpressJobs": {"skipped": "blocks GitHub"}}
     assert record["new_by_subfield"] == {"electronics": 1} and record["sent"] == 0
     assert record["top_companies"] == [("ChipCo", 1)]
-    store = stats.StatsStore(tmp_path / "stats.json")
-    store.add(record); store.suggestions = [{"id": "x"}]; store.save()
-    again = stats.StatsStore(tmp_path / "stats.json")
-    assert again.runs[0]["date"] == "2026-10-13" and again.suggestions == [{"id": "x"}]
-
-
-def test_jobs_log_appends_and_marks_hidden(tmp_path, cfg):
-    a = job("Embedded Engineer", subfields=["electronics"], level="entry", ai_score=9, ai_reason="fits")
-    b = job("Sales Engineer", subfields=["technical_sales"], ai_score=2)
-    path = tmp_path / "jobs_log.csv"
-    stats.append_jobs_log(path, TODAY, [a, b], {b.uid}, cfg)
-    stats.append_jobs_log(path, TODAY, [job("Network Engineer", subfields=["networking"])], set(), cfg)
-    rows = list(csv.DictReader(open(path, encoding="utf-8")))
-    assert [(r["title"], r["status"]) for r in rows] == [
-        ("Embedded Engineer", "sent"), ("Sales Engineer", "hidden by AI"), ("Network Engineer", "sent")]
-    assert rows[0]["subfields"] == "Electronics / Embedded / Hardware"
-    assert rows[0]["level"] == "Entry level / Fresh graduate" and rows[0]["ai_score"] == "9"
 
 
 def run(day_offset=0, **kw):

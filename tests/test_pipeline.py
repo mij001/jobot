@@ -178,20 +178,76 @@ def test_live_config_is_valid():
     assert cfg.enabled_subfields and cfg.enabled_sources()
 
 
-def test_run_logs_statistics(fake_env):
+PASSWORD = "correct horse battery staple"
+
+
+def open_history(state):
+    from jobot.vault import Vault
+    return Vault(state.parent / "history", PASSWORD)
+
+
+def test_run_keeps_encrypted_history(fake_env, monkeypatch):
     config, state, sent = fake_env
+    monkeypatch.setenv("DASHBOARD_PASSWORD", PASSWORD)
     args = ["--config", str(config), "--state", str(state)]
     jobot_main.run(["--dry-run", *args])
-    assert not (state.parent / "stats.json").exists()  # dry runs log nothing
+    assert not (state.parent / "history").exists()  # dry runs keep nothing
     jobot_main.run(args)
     jobot_main.run(args)
-    data = json.loads((state.parent / "stats.json").read_text())
-    assert [r["new"] for r in data["runs"]] == [1, 0]
-    assert data["runs"][0]["sources"]["BrokenSite"]["error"].startswith("RuntimeError")
-    assert isinstance(data["suggestions"], list)
-    log = (state.parent / "jobs_log.csv").read_text().splitlines()
-    assert log[0].startswith("date,status,site,title") and "Embedded Engineer" in log[1] and len(log) == 2
+
+    folder = state.parent / "history"
+    assert not (state.parent / "stats.json").exists() and not (state.parent / "jobs_log.csv").exists()
+    assert "Embedded Engineer" not in "".join(p.read_text() for p in folder.iterdir())  # nothing readable
+    vault = open_history(state)
+    stats = vault.read("stats")
+    assert [r["new"] for r in stats["runs"]] == [1, 0]
+    assert stats["runs"][0]["sources"]["BrokenSite"]["error"].startswith("RuntimeError")
+    assert isinstance(stats["suggestions"], list)
+    [shard] = [n for n in vault.meta["shards"] if n.startswith("jobs-")]
+    [entry] = vault.read(shard)
+    assert entry["title"] == "Embedded Engineer" and entry["status"] == "sent" and entry["importance"] in ("good", "maybe")
     assert "jobs scanned" in sent[0].email_text()
+
+
+def test_no_password_means_no_history(fake_env, monkeypatch):
+    config, state, sent = fake_env
+    monkeypatch.delenv("DASHBOARD_PASSWORD", raising=False)
+    assert jobot_main.run(["--config", str(config), "--state", str(state)]) == 0
+    assert not (state.parent / "history").exists() and not (state.parent / "stats.json").exists()
+    assert "FakeSite:1" in json.loads(state.read_text())["ids"]  # the bot's own memory still works
+    assert "History isn't being saved" in Report(**{**sent[0].__dict__, "history_note": jobot_main.History.open(
+        state.parent, {}).note}).email_text()
+
+
+def test_wrong_password_never_overwrites_history(fake_env, monkeypatch):
+    config, state, sent = fake_env
+    args = ["--config", str(config), "--state", str(state)]
+    monkeypatch.setenv("DASHBOARD_PASSWORD", PASSWORD)
+    jobot_main.run(args)
+    before = {p.name: p.read_text() for p in (state.parent / "history").iterdir()}
+    monkeypatch.setenv("DASHBOARD_PASSWORD", "something else")
+    assert jobot_main.run(args) == 0  # the daily message still goes out
+    assert {p.name: p.read_text() for p in (state.parent / "history").iterdir()} == before
+
+
+def test_old_plaintext_stats_move_into_the_vault(fake_env, monkeypatch):
+    config, state, sent = fake_env
+    monkeypatch.setenv("DASHBOARD_PASSWORD", PASSWORD)
+    (state.parent).mkdir(exist_ok=True)
+    (state.parent / "stats.json").write_text(json.dumps(
+        {"runs": [{"date": "2026-10-01", "new": 4, "sent": 4}], "suggestions": [{"id": "x"}]}))
+    (state.parent / "jobs_log.csv").write_text(
+        "date,status,site,title,company,location,subfields,level,ai_score,ai_reason,closing,url\n"
+        "2026-10-01,sent,topjobs.lk,Power Engineer,Acme,Colombo,Power & Energy,Mid level,8,great,2026-10-20,https://t/1\n"
+        "2026-09-30,hidden by AI,ikman.lk,Sales Engineer,Beta,,,not stated,2,no,,https://t/2\n")
+    jobot_main.run(["--config", str(config), "--state", str(state)])
+    assert not (state.parent / "stats.json").exists() and not (state.parent / "jobs_log.csv").exists()
+    vault = open_history(state)
+    assert [r["date"] for r in vault.read("stats")["runs"]] == ["2026-10-01", jobot_main.datetime.now(
+        jobot_main.SRI_LANKA_TZ).date().isoformat()]
+    [power] = vault.read("jobs-2026-10")[:1]
+    assert (power["title"], power["importance"], power["level"]) == ("Power Engineer", "top", "mid")
+    assert vault.read("jobs-2026-09")[0]["importance"] == "low"
 
 
 class PosterSource:
@@ -208,6 +264,7 @@ class PosterSource:
 
 def test_run_reads_adverts_and_filters_by_qualification(fake_env, monkeypatch):
     config, state, sent = fake_env
+    monkeypatch.setenv("DASHBOARD_PASSWORD", PASSWORD)
     monkeypatch.setattr(jobot_main, "SOURCES", {"fake": PosterSource})
     config.write_text(config.read_text(encoding="utf-8").replace("broken: {}", ""), encoding="utf-8")
     ADVERTS.update({
@@ -228,7 +285,7 @@ def test_run_reads_adverts_and_filters_by_qualification(fake_env, monkeypatch):
     assert "Adverts read: 2 opened (2 posters via OCR)" in text
     cache = json.loads((state.parent / "postings_cache.json").read_text())
     assert set(cache) == {"PosterSite:1", "PosterSite:2"}
-    stats = json.loads((state.parent / "stats.json").read_text())["runs"][-1]
+    stats = open_history(state).read("stats")["runs"][-1]
     assert stats["postings"]["opened"] == 2 and stats["new_by_qualification"] == {"degree": 1}
 
     # Next day: adverts come from the cache; the diploma job is still filtered, not re-sent.
@@ -246,3 +303,14 @@ def test_no_read_flag_skips_postings(fake_env):
     OPENED.clear()
     jobot_main.run(["--config", str(config), "--state", str(state), "--no-read"])
     assert OPENED == [] and not (state.parent / "postings_cache.json").exists()
+
+
+def test_dashboard_link_in_messages(cfg):
+    from jobot.main import dashboard_url
+    assert dashboard_url({"GITHUB_REPOSITORY": "mij001/jobot"}) == "https://mij001.github.io/jobot/"
+    assert dashboard_url({}) is None
+    report = Report([make_job(1)], [], cfg, date(2026, 10, 12), dashboard_url="https://mij001.github.io/jobot/")
+    assert "https://mij001.github.io/jobot/" in report.email_text()
+    assert 'href="https://mij001.github.io/jobot/"' in report.email_html()
+    assert 'href="https://mij001.github.io/jobot/"' in "\n".join(report.telegram_messages())
+    assert "github.io" not in Report([make_job(1)], [], cfg, date(2026, 10, 12)).email_text()

@@ -46,10 +46,13 @@ Optional extras:
   where you flip switches instead of editing YAML, with a **statistics
   dashboard** and **suggestions** you can apply in one tap.
 
-Every run also logs **statistics** (`data/stats.json`) and every new job
-(`data/jobs_log.csv` – opens in Excel / Google Sheets). Once a week the
-message adds a **"Your week"** summary and up to three **suggestions**, and
-jobs the AI scores 8/10 or higher appear as **⭐ Top picks** at the top.
+Every run also saves **statistics** and every new job to a
+**password-protected dashboard** on the settings page: browse past jobs
+sorted by importance (Top picks → Good fits → Worth a look → Low priority),
+and keep your own **shortlist** (shortlisted / applied / dismissed). Once a
+week the message adds a **"Your week"** summary and up to three
+**suggestions**, and jobs the AI scores 8/10 or higher appear as **⭐ Top
+picks** at the top.
 
 A message looks like this:
 
@@ -141,7 +144,18 @@ messages are grouped and ordered, set up the AI reviewer, and start a run
 its comments. The palette button picks the page's colour, Material You
 style – light, dark or automatic.
 
-### 5. Turn it on
+### 5. (Optional) Password-protected history
+
+Add one more secret, **`DASHBOARD_PASSWORD`** – a long passphrase of your
+own. From then on every run saves each job it found (and the run's
+statistics) to `data/history/`, **encrypted** with that password, and the
+settings page shows them under **Your jobs** once you type it. See
+[Your jobs dashboard](#your-jobs-dashboard) for what that gives you and what
+it can't protect.
+
+Without the secret nothing is saved to the repository, because it is public.
+
+### 6. Turn it on
 
 1. Open the **Actions** tab and enable workflows if GitHub asks.
 2. Pick **Daily EEE job hunt → Run workflow** to try it right away.
@@ -279,16 +293,51 @@ notify:
 `best_match` puts the highest AI score first (then newest). Try a one-off
 layout with `python -m jobot --dry-run --group-by site --order-by closing_soon`.
 
+### Your jobs dashboard
+
+Open the settings page and type your `DASHBOARD_PASSWORD` under **Your jobs**
+(tick *Stay unlocked on this device* on your own phone or computer):
+
+* **Importance** – each job is filed as **Top picks** (AI score ≥
+  `notify.top_picks_score`, 8 by default), **Good fits** (6–7), **Worth a
+  look** (4–5) or **Low priority** (held back by the AI). Without the AI,
+  jobs are filed by how clearly the advert matches: an EEE title plus a
+  stated qualification and level is a good fit.
+* **Your shortlist** – tap *Shortlist*, *Applied* or *Dismiss* on a job. The
+  tabs (*To review · Shortlist · Applied · Dismissed · All*) show what you've
+  marked, still grouped by importance. Marks are saved encrypted too, from
+  the page, so they follow you between phone and computer. Saving needs the
+  GitHub token from step 4, like saving settings does.
+* Search by title, company, place or field; filter by how long ago the job
+  was seen; hide jobs whose closing date has passed. Each job shows what the
+  advert asks for, the AI's one-line reason, the closing date and the e-mail
+  to apply to.
+
+How it is protected: the browser derives a key from your password
+(PBKDF2-SHA256, 600 000 rounds) and decrypts with AES-256-GCM; the password is
+never sent anywhere. The files in `data/history/` are unreadable without it,
+so a **long passphrase** matters – anyone can download them and try guesses.
+What stays public: this repository, `config.yaml` (including your AI profile)
+and the settings page itself, which is just a viewer. Older commits can still
+hold the plain-text `data/stats.json` / `data/jobs_log.csv` from before
+encryption existed; the first run with the secret moves them into the
+encrypted history and deletes the files, but git remembers them. If that
+matters, make the repository private (GitHub Pages then needs a paid plan).
+
+Changing the password: set the new secret, then delete the `data/history/`
+folder – the old history can't be read with a different password. Lost
+password: same thing.
+
 ### Statistics & suggestions
 
-Each run appends a record to `data/stats.json`: jobs scanned per site (or
+Each run adds a record to the encrypted history: jobs scanned per site (or
 why a site failed / was skipped), open matches, new jobs, jobs sent, jobs
 the AI hid, new jobs by sub-field / level / qualification / site, **open
 jobs per sub-field including switched-off ones**, how many matches your
 level and qualification filters drop, how many adverts were read (and how
-many were posters), and the companies hiring most. Every new job goes into
-`data/jobs_log.csv` (date, sent or hidden by AI, site, title, company,
-sub-fields, level, qualification, AI score and reason, closing date, link).
+many were posters), and the companies hiring most. Every new job is kept
+with its site, title, company, sub-fields, level, qualification, AI score
+and reason, what the advert asks for, closing date, apply e-mail and link.
 
 From that history jobot suggests, for example:
 

@@ -875,8 +875,8 @@ notify:
   group_by: level
   # A "Your week" summary (new jobs, busiest sub-fields and sites, top
   # employers) and up to 3 suggestions, added on this day: monday … sunday,
-  # daily, or off. Statistics are logged every run in data/stats.json and
-  # every new job in data/jobs_log.csv either way.
+  # daily, or off. Statistics and every new job are saved every run, encrypted
+  # with your DASHBOARD_PASSWORD secret, for the settings page's dashboard.
   weekly_summary: monday
   # Jobs the AI scores at least this high are listed as "Top picks" at the
   # top of the message (0 = off).

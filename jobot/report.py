@@ -32,6 +32,8 @@ class Report:
     weekly: list[str] = field(default_factory=list)  # "your week" summary lines
     tips: list[str] = field(default_factory=list)  # suggestions to show
     read_note: str | None = None  # what the posting reader did
+    history_note: str | None = None  # why no history is being kept, if so
+    dashboard_url: str | None = None  # the page with your history and shortlist
 
     # -- shared helpers ---------------------------------------------------
 
@@ -71,7 +73,7 @@ class Report:
         return f"{n} new EEE job{'s' if n != 1 else ''} in Sri Lanka – {when}"
 
     def source_summary(self) -> list[str]:
-        lines = [x for x in (self.stats_line, self.read_note, self.ai_note) if x]
+        lines = [x for x in (self.stats_line, self.read_note, self.ai_note, self.history_note) if x]
         for s in self.sources:
             if s.skipped:
                 lines.append(f"{s.name}: skipped ({s.skipped})")
@@ -122,6 +124,8 @@ class Report:
             blocks.append("📈 <b>Your week</b>\n" + "\n".join(escape(x) for x in self.weekly))
         if self.tips:
             blocks.append("💡 <b>Suggestions</b>\n" + "\n".join("• " + escape(t) for t in self.tips))
+        if self.dashboard_url:
+            blocks.append(f'📊 <a href="{escape(self.dashboard_url, quote=True)}">Dashboard</a> – past jobs and your shortlist')
         blocks.append(footer)
 
         messages, current = [], header
@@ -170,6 +174,8 @@ class Report:
             out.extend(["== Your week ==", *self.weekly, ""])
         if self.tips:
             out.extend(["== Suggestions ==", *(f"* {t}" for t in self.tips), ""])
+        if self.dashboard_url:
+            out.append(f"Dashboard (past jobs and your shortlist): {self.dashboard_url}")
         out.append("Sources: " + " · ".join(self.source_summary()))
         return "\n".join(out)
 
@@ -218,6 +224,9 @@ class Report:
         if self.tips:
             parts.append('<h3 style="border-bottom:1px solid #ccc;padding-bottom:4px">💡 Suggestions</h3><ul>'
                          + "".join(f"<li>{escape(t)}</li>" for t in self.tips) + "</ul>")
+        if self.dashboard_url:
+            parts.append(f'<p style="margin:16px 0 0"><a href="{escape(self.dashboard_url, quote=True)}">📊 Open your dashboard</a>'
+                         ' – past jobs and your shortlist</p>')
         summary = escape(" · ".join(self.source_summary()))
         parts.append(f'<p style="color:#888;font-size:12px">Sources: {summary}</p></div>')
         return "\n".join(parts)
