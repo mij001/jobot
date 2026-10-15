@@ -270,3 +270,26 @@ def test_empty_demand_is_not_reported_as_a_complete_resume(cfg):
     assert report["demand"]["skills"] == []
     assert not any("already shows every skill" in n for n in report["notes"])
     assert any("No recognisable skills" in n for n in report["notes"])
+
+
+def test_an_unavailable_ai_keeps_the_last_good_answers_for_the_same_resume(tmp_path, cfg, fast_vault):
+    env = {"DASHBOARD_PASSWORD": "pw", "AI_API_KEY": "k"}
+    h = _vault_with_jobs(tmp_path, cfg, env)
+    h.vault.write(resume.NAME, {"kind": "text", "name": "pasted text", "updated": "2026-10-14", "text": RESUME.text})
+    h.vault.write("marks", {})
+    cfg.coach.projects = 2
+    good = coach.run(cfg, env, History.open(tmp_path, env), date(2026, 10, 12), post=FakeAI(), sleep=lambda s: None)
+    assert good["analysis"] and good["projects"]
+
+    quota = Resp(429, text='{"error": {"message": "exceeded", "details": [{"violations": [{"quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier"}]}]}}')
+    later = coach.run(cfg, env, History.open(tmp_path, env), TODAY, post=lambda *a, **k: quota, sleep=lambda s: None)
+    assert later["date"] == "2026-10-15" and later["analysis"] == good["analysis"] and later["projects"] == good["projects"]
+    assert later["digest"] == good["digest"] and later["model"] == good["model"]
+    assert any("Kept the resume analysis, project ideas" in n and "2026-10-12" in n for n in later["notes"])
+    assert any("free daily limit is used up" in n for n in later["notes"])  # and it says why
+
+    # a different resume: yesterday's analysis would be about someone else's text, so nothing is carried over
+    h2 = History.open(tmp_path, env)
+    h2.vault.write(resume.NAME, {"kind": "text", "name": "pasted text", "updated": "2026-10-15", "text": RESUME.text + "\nNew job: PLC technician"})
+    changed = coach.run(cfg, env, History.open(tmp_path, env), TODAY, post=lambda *a, **k: quota, sleep=lambda s: None)
+    assert changed["analysis"] is None and changed["projects"] == []

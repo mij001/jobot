@@ -405,6 +405,15 @@ products – set `coach.send_resume: false` to keep the resume text out of the
 AI entirely; you still get skill demand, gaps and resume match, which are
 computed here. Resume and adverts are treated as data, never as instructions.
 
+**Free limits:** Gemini's free tier allows only a small number of requests per
+model per day, and Pro often has no free allowance at all. A coach report uses
+3 requests, *Prepare* 1, and the daily review 1 per 20 new jobs (`ai.batch_size`) – so pressing
+*Analyse* over and over can use the day's allowance up. When that happens the
+report says so ("the AI's free daily limit is used up"), the counted parts are
+still refreshed, and the last good analysis, project ideas and tips are kept
+(for the same resume) instead of being replaced by nothing. It resets overnight
+(Pacific time, about midday in Sri Lanka).
+
 One-off from the command line: `python -m jobot --career` (rebuild the
 report) and `python -m jobot --prepare <job id>` (the id is shown on the
 job card). In GitHub Actions use *Run workflow* → `career` or `prepare`.

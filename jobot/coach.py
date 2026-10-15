@@ -249,7 +249,7 @@ def build_report(cfg: Config, env: dict[str, str], entries: list[dict], marks: d
             extra = [s for s in report["analysis"]["skills"] if s not in report["resume_skills"]]
             report["resume_extra_skills"] = extra
         else:
-            notes.append(f"Resume analysis unavailable ({error}).")
+            notes.append(f"Resume analysis unavailable – {_why(error)}.")
     else:
         notes.append("coach.send_resume is off, so the AI never saw your resume text; only skill names were used.")
     report["digest"] = digest
@@ -265,7 +265,7 @@ def build_report(cfg: Config, env: dict[str, str], entries: list[dict], marks: d
         if data is not None:
             report["projects"] = _projects(data, coach.projects)
         else:
-            notes.append(f"Project ideas unavailable ({error}).")
+            notes.append(f"Project ideas unavailable – {_why(error)}.")
     elif not market["skills"]:
         if market["jobs"] >= MIN_JOBS:
             notes.append("No recognisable skills were found in the stored adverts, so there is nothing to compare your resume "
@@ -290,10 +290,53 @@ def build_report(cfg: Config, env: dict[str, str], entries: list[dict], marks: d
                     m["verdict"] = " ".join(str(t.get("verdict") or "").split())[:200]
                     m["tips"] = _clip(t.get("tips"), 2, 240)
         else:
-            notes.append(f"Tailoring tips unavailable ({error}).")
+            notes.append(f"Tailoring tips unavailable – {_why(error)}.")
 
     report["model"], report["ai"] = model, model is not None
     return report
+
+
+def _why(error: str | None) -> str:
+    """The AI's failure, in words a person can act on."""
+    text = error or "no answer"
+    if "free quota" in text:
+        return "the AI's free daily limit is used up (it resets overnight, Pacific time)"
+    if "rate-limited" in text:
+        return "the AI is rate-limiting this key right now"
+    if "HTTP 503" in text or "high demand" in text:
+        return "the AI is busy right now"
+    return text
+
+
+def _carry_over(report: dict, previous: Any) -> None:
+    """When the AI couldn't answer today, keep what the last report said (for the same resume)
+    instead of replacing it with nothing."""
+    if not isinstance(previous, dict) or not isinstance(previous.get("resume"), dict):
+        return
+    old, new = previous["resume"], report["resume"]
+    if any(old.get(k) != new.get(k) for k in ("name", "updated", "chars")):
+        return  # a different resume: the earlier answers don't apply
+    kept = []
+    if report["analysis"] is None and isinstance(previous.get("analysis"), dict):
+        report["analysis"] = previous["analysis"]
+        report["digest"] = previous.get("digest") or report["digest"]
+        report["resume_extra_skills"] = previous.get("resume_extra_skills") or []
+        kept.append("resume analysis")
+    if not report["projects"] and isinstance(previous.get("projects"), list) and previous["projects"]:
+        report["projects"] = previous["projects"]
+        kept.append("project ideas")
+    old_tips = {m.get("id"): m for m in previous.get("matches") or [] if isinstance(m, dict) and (m.get("tips") or m.get("verdict"))}
+    tips = 0
+    for m in report["matches"]:
+        if not (m.get("tips") or m.get("verdict")) and m["id"] in old_tips:
+            m["verdict"], m["tips"] = old_tips[m["id"]].get("verdict", ""), old_tips[m["id"]].get("tips", [])
+            tips += 1
+    if tips:
+        kept.append("tailoring tips")
+    if kept:
+        if not report["model"] and previous.get("model"):
+            report["model"], report["ai"] = previous["model"], True
+        report["notes"].append(f"Kept the {', '.join(kept)} from {previous.get('date') or 'the last report'} (the AI had no answer today).")
 
 
 # -- running it ----------------------------------------------------------------------
@@ -318,6 +361,10 @@ def run(cfg: Config, env: dict[str, str], history: History, today: date, post=re
     entries = history.entries(today - timedelta(days=max(cfg.coach.window_days, 30)))
     marks = history.vault.read("marks") or {}
     report = build_report(cfg, env, entries, marks if isinstance(marks, dict) else {}, rsm, today, post, sleep)
+    try:
+        _carry_over(report, history.vault.read(NAME))
+    except Exception:  # a damaged earlier report just isn't carried over
+        pass
     if save:
         history.write_named(NAME, report)
     log.info("Career report %s: %d skills in demand, %d gaps, %d projects, %d matched jobs%s",
