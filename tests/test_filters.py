@@ -128,3 +128,19 @@ def test_overlapping_keywords_count_once(cfg):
     # Only "Electrical Engineering" -> one hit, so a vague title isn't matched on it alone.
     assert distinct_hits(["electrical", "electrical engineer*"], "Degree in Electrical Engineering") == {"electrical engineer*"}
     assert match_subfields(job("Hydrogeological Engineer", "Degree or Diploma in Mechanical / Electrical Engineering"), cfg) == []
+
+
+def test_watch_and_avoid_companies(cfg):
+    from jobot.history import importance
+    cfg.watch_companies = ["CEB", "Ceylon Electricity*"]
+    cfg.avoid_companies = ["Shady Traders"]
+    jobs = [job("Electrical Engineer", company="Ceylon Electricity Board", sid="a"),
+            job("Electrical Engineer", company="Shady Traders (Pvt) Ltd", sid="b"),
+            job("Electronic Engineer", company="Acme", sid="c")]
+    picked = select_jobs(jobs, cfg)
+    assert [(j.company, j.watched) for j in picked] == [("Ceylon Electricity Board", True), ("Acme", False)]
+    watched, plain = picked
+    assert importance(watched, cfg) == "good" and importance(plain, cfg) == "maybe"  # one tier up
+    plain.ai_score = 9
+    watched.ai_score = 9
+    assert importance(watched, cfg) == "top" and importance(watched, cfg, hidden=True) == "low"

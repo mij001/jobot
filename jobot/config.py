@@ -116,6 +116,8 @@ class Config:
     min_description_hits: int = 2
     description_match_titles: list[str] = field(default_factory=list)
     locations: list[str] = field(default_factory=list)
+    watch_companies: list[str] = field(default_factory=list)  # employers you want to hear about first
+    avoid_companies: list[str] = field(default_factory=list)  # employers you never want
     include_overseas: bool = True
     overseas_keywords: list[str] = field(default_factory=list)
     include_unknown_level: bool = True
@@ -257,6 +259,8 @@ def parse_config(raw: dict[str, Any]) -> Config:
         min_description_hits=int(raw.get("min_description_hits", 2)),
         description_match_titles=_str_list(raw.get("description_match_titles"), "description_match_titles"),
         locations=_str_list(raw.get("locations"), "locations"),
+        watch_companies=_str_list(raw.get("watch_companies"), "watch_companies"),
+        avoid_companies=_str_list(raw.get("avoid_companies"), "avoid_companies"),
         include_overseas=bool(raw.get("include_overseas", True)),
         overseas_keywords=_str_list(raw.get("overseas_keywords"), "overseas_keywords"),
         include_unknown_level=bool(raw.get("include_unknown_level", True)),

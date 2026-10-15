@@ -448,6 +448,13 @@ description_match_titles:
 # e.g. [Colombo, Gampaha, Kandy, Remote]
 locations: []
 
+# Employers you care about. Jobs from a WATCHED company are marked 👀 and move up
+# one importance tier; jobs from an AVOIDED company are never sent. Company
+# names follow the keyword rules above (whole words, * wildcard): e.g.
+#   watch_companies: [CEB, "Ceylon Electricity Board", Dialog, "SLT*"]
+watch_companies: []
+avoid_companies: []
+
 # Sri Lankan sites also carry many overseas jobs (Gulf, Maldives ...).
 # Set to false to skip ads that mention one of `overseas_keywords` in the
 # title or location.

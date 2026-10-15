@@ -34,6 +34,7 @@ class Job:
     also_on: list[tuple[str, str]] = field(default_factory=list)  # (source, url) duplicates
     ai_score: int | None = None  # 0-10 from the optional AI reviewer
     ai_reason: str = ""
+    watched: bool = False  # the employer is on your watch list
     preset: list[str] | None = field(default=None, repr=False)  # sub-fields set by the source
 
     @property

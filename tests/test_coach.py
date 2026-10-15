@@ -65,7 +65,8 @@ class FakeAI:
 
     def __call__(self, url, json, headers, timeout):
         system, user = (m["content"] for m in json["messages"])
-        kind = "analysis" if "resume (name and contact" in system else "projects" if "portfolio projects" in system else "tailor"
+        kind = ("analysis" if "resume (name and contact" in system else "projects" if "portfolio projects" in system
+                else "prepare" if "prepare to apply" in system else "tailor")
         self.calls.append((kind, user))
         if kind in self.fail:
             return Resp(503, "busy")
@@ -77,6 +78,9 @@ class FakeAI:
             "projects": {"projects": [{"title": "Mini SCADA with OpenPLC", "goal": "Monitor a pump", "why": "SCADA asked in 3 adverts",
                                        "skills": ["SCADA / HMI", "PLC"], "steps": ["Install OpenPLC", "Build HMI"], "deliverables": ["GitHub repo"],
                                        "weeks": 3, "difficulty": "intermediate", "show_it": "README with screenshots"}] * 6},
+            "prepare": {"letter": "Dear hiring team, ...\n\n[Your name]", "bullets": ["Built a PLC pump controller"],
+                        "keywords": ["SCADA", "PLC"], "questions": [{"q": "Explain ladder logic", "tip": "Use the pump project"}] * 9,
+                        "study": ["Revise ladder logic"], "gaps": ["No ETAP: try the free trial"]},
             "tailor": {"results": [{"id": "S:1", "verdict": "Strong PLC fit", "tips": ["Lead with PLC work", "Mention TIA Portal", "third"]}]},
         }[kind]
         return Resp(200, json_body={"choices": [{"message": {"content": "```json\n" + json_dumps(body) + "\n```"}}]})
@@ -184,3 +188,75 @@ def test_run_reads_the_vault_and_saves_the_report(tmp_path, cfg, fast_vault):
     cfg.coach.enabled = False
     assert coach.digest_for_review(again, cfg) == ""
     assert coach.digest_for_review(History.open(tmp_path, {}), cfg) == ""
+
+
+def _vault_with_jobs(tmp_path, cfg, env):
+    from jobot.models import Job
+    h = History.open(tmp_path, env)
+    def add(i, title, closing, day=date(2026, 10, 10)):
+        h.add_jobs(day, [Job(source="t", source_id=str(i), title=title, url=f"https://t/{i}", company=f"Co {i}",
+                             description="PLC and SCADA. BSc in EEE.", closing=closing, subfields=["general"])], set(), cfg)
+    add(1, "Closes in two days", "2026-10-17")
+    add(2, "Closes in ten days", "2026-10-25")
+    add(3, "Not shortlisted, closes tomorrow", "2026-10-16")
+    add(4, "Closed yesterday", "2026-10-14")
+    h.save()
+    return h
+
+
+def test_closing_soon_lists_shortlisted_jobs_only(tmp_path, cfg, fast_vault):
+    env = {"DASHBOARD_PASSWORD": "pw"}
+    h = _vault_with_jobs(tmp_path, cfg, env)
+    assert coach.closing_soon(h, TODAY) == []  # nothing shortlisted yet
+    h.vault.write("marks", {"t:1": {"s": "shortlist", "t": "x"}, "t:2": {"s": "shortlist", "t": "x"},
+                            "t:4": {"s": "shortlist", "t": "x"}, "t:3": {"s": "dismissed", "t": "x"}})
+    rows = coach.closing_soon(History.open(tmp_path, env), TODAY)
+    assert [(r["title"], r["days"]) for r in rows] == [("Closes in two days", 2)]
+    assert coach.closing_soon(History.open(tmp_path, env), TODAY, days=10)[1]["title"] == "Closes in ten days"
+    assert coach.closing_soon(History.open(tmp_path, {}), TODAY) == []
+
+
+def test_reminders_appear_in_every_message_format(cfg):
+    from jobot.report import Report
+    rows = [{"id": "t:1", "title": "Site Engineer", "company": "ZTE", "url": "https://t/1", "closing": "2026-10-17", "days": 2}]
+    report = Report([], [], cfg, TODAY, reminders=rows)
+    assert "== Closing soon – your shortlist ==" in report.email_text() and "closes 2026-10-17 (in 2 days)" in report.email_text()
+    assert "Closing soon" in report.email_html() and 'href="https://t/1"' in report.email_html()
+    assert "⏰" in "\n".join(report.telegram_messages())
+    assert "Closing soon" not in Report([], [], cfg, TODAY).email_text()
+
+
+def test_weekly_lines_name_the_skills_to_build(tmp_path, cfg, fast_vault):
+    env = {"DASHBOARD_PASSWORD": "pw"}
+    h = History.open(tmp_path, env)
+    assert coach.weekly_lines(h, cfg) == []
+    h.write_named("career", {"demand": {"skills": [
+        {"skill": "SCADA / HMI", "jobs": 31, "have": False}, {"skill": "PLC", "jobs": 40, "have": True},
+        {"skill": "ETAP", "jobs": 22, "have": False}]}, "projects": [{"title": "Mini SCADA with OpenPLC"}]})
+    assert coach.weekly_lines(h, cfg) == ["🎯 Skills to build: SCADA / HMI (31 adverts), ETAP (22 adverts)", "🛠 Portfolio idea: Mini SCADA with OpenPLC"]
+    cfg.coach.enabled = False
+    assert coach.weekly_lines(h, cfg) == []
+
+
+def test_prepare_for_a_job_saves_and_keeps_only_the_newest(tmp_path, cfg, fast_vault, monkeypatch):
+    env = {"DASHBOARD_PASSWORD": "pw", "AI_API_KEY": "k"}
+    h = _vault_with_jobs(tmp_path, cfg, env)
+    h.vault.write(resume.NAME, {"kind": "text", "text": RESUME.text, "updated": "2026-10-14"})
+    fake = FakeAI()
+    got = coach.prepare(cfg, env, History.open(tmp_path, env), "t:1", TODAY, post=fake, sleep=lambda s: None)
+    kind, prompt = fake.calls[0]
+    assert kind == "prepare" and "Closes in two days" in prompt and "[name]" in prompt and "Nimal" not in prompt
+    assert got["letter"].endswith("[Your name]") and got["bullets"] == ["Built a PLC pump controller"]
+    assert len(got["questions"]) == 8 and got["gaps"] and got["model"] == "gemini-pro-latest"
+    store = History.open(tmp_path, env).vault.read("prepare")
+    assert list(store) == ["t:1"]
+
+    monkeypatch.setattr(coach, "KEEP_PREPARED", 2)
+    for jid, day in (("t:2", date(2026, 10, 16)), ("t:3", date(2026, 10, 17))):
+        coach.prepare(cfg, env, History.open(tmp_path, env), jid, day, post=fake, sleep=lambda s: None)
+    assert sorted(History.open(tmp_path, env).vault.read("prepare")) == ["t:2", "t:3"]  # the oldest fell away
+
+    assert coach.prepare(cfg, env, History.open(tmp_path, env), "nope:1", TODAY, post=fake) is None
+    assert coach.prepare(cfg, {"DASHBOARD_PASSWORD": "pw"}, History.open(tmp_path, env), "t:1", TODAY, post=fake) is None  # no key
+    no_resume = coach.prepare(cfg, {**env, "DASHBOARD_PASSWORD": "pw"}, History.open(tmp_path, env), "t:4", TODAY, post=fake, save=False)
+    assert no_resume is not None and History.open(tmp_path, env).vault.read("prepare").keys() == {"t:2", "t:3"}  # save=False writes nothing

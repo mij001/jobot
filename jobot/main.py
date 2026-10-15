@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import sys
@@ -53,6 +54,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-ai", action="store_true", help="skip the AI review step this run")
     p.add_argument("--career", action="store_true",
                    help="only refresh the career report (resume analysis, skill gaps, portfolio ideas), then exit")
+    p.add_argument("--prepare", metavar="JOB_ID",
+                   help="cover letter, resume bullets, interview questions and a study plan for one job, then exit")
     p.add_argument("--no-read", action="store_true",
                    help="don't open the job adverts themselves (posters, PDFs) this run")
     p.add_argument("--list", action="store_true", help="show sub-fields, levels and sources, then exit")
@@ -160,6 +163,16 @@ def run_career(cfg: Config, args: argparse.Namespace) -> int:
     return 0
 
 
+def run_prepare(cfg: Config, args: argparse.Namespace) -> int:
+    env = dict(os.environ)
+    today = datetime.now(SRI_LANKA_TZ).date()
+    history = History.open(Path(args.state).parent, env)
+    result = coach.prepare(cfg, env, history, args.prepare.strip(), today, save=not args.dry_run)
+    if result is not None and args.dry_run:
+        print(json.dumps(result, indent=1, ensure_ascii=False))
+    return 0 if result is not None else 1
+
+
 def _redact(text: str, env: dict[str, str]) -> str:
     for key in ("TELEGRAM_BOT_TOKEN", "SMTP_PASSWORD", "AI_API_KEY", "DASHBOARD_PASSWORD"):
         if env.get(key):
@@ -185,6 +198,8 @@ def run(argv: list[str] | None = None) -> int:
         return 0
     if args.career:
         return run_career(cfg, args)
+    if args.prepare:
+        return run_prepare(cfg, args)
 
     log.info("Sub-fields: %s", ", ".join(s.key for s in cfg.enabled_subfields) or "(none)")
     log.info("Levels:     %s%s", ", ".join(lv.key for lv in cfg.enabled_levels) or "(none)",
@@ -235,12 +250,14 @@ def run(argv: list[str] | None = None) -> int:
     runs = history.runs + [record]
     tips = suggestions.generate(runs, cfg, today)
     weekly_day = cfg.weekly_summary in ("daily", today.strftime("%A").lower())
+    reminders = coach.closing_soon(history, today)
     stats_line = f"{len(all_jobs)} jobs scanned · {len(matched)} open matches · {len(new)} new · {len(shown)} sent"
     report = Report(
         jobs=shown, sources=results, cfg=cfg, day=today, ai_note=ai_note, stats_line=stats_line,
         read_note=read_stats.summary if read_stats else None,
         history_note=history.note if weekly_day else None, dashboard_url=dashboard_url(env),
-        weekly=stats.week_summary(runs, cfg, today) if weekly_day else [],
+        weekly=(stats.week_summary(runs, cfg, today) + coach.weekly_lines(history, cfg)) if weekly_day else [],
+        reminders=reminders,
         tips=[t["text"] for t in tips if t["kind"] != "insight"][:3] if weekly_day else [],
     )
     checked = [r for r in results if not r.skipped]
@@ -259,7 +276,7 @@ def run(argv: list[str] | None = None) -> int:
         return 1 if all_sources_failed else 0
 
     delivered = False
-    if shown or cfg.send_when_empty:
+    if shown or cfg.send_when_empty or reminders:
         for name, channel in channels.items():
             try:
                 channel.send(report, env)

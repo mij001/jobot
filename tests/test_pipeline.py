@@ -378,3 +378,24 @@ def test_daily_run_refreshes_the_career_report_and_uses_its_digest(fake_env, mon
     monkeypatch.setattr(jobot_main.coach.ai, "ask_json", lambda *a, **k: calls.append(1) or (None, None, "x"))
     jobot_main.run([*args, "--no-ai"])
     assert calls == []
+
+
+def test_shortlist_reminders_go_out_even_when_nothing_is_new(fake_env, monkeypatch):
+    from datetime import timedelta
+    config, state, sent = fake_env
+    monkeypatch.setenv("DASHBOARD_PASSWORD", PASSWORD)
+    args = ["--config", str(config), "--state", str(state)]
+    jobot_main.run(args)  # first day: logs "Embedded Engineer" in the history
+    today = jobot_main.datetime.now(jobot_main.SRI_LANKA_TZ).date()
+    vault = open_history(state)
+    shard = next(n for n in vault.meta["shards"] if n.startswith("jobs-"))
+    rows = vault.read(shard)
+    rows[0]["closing"] = (today + timedelta(days=2)).isoformat()
+    vault.write(shard, rows)
+    vault.write("marks", {rows[0]["id"]: {"s": "shortlist", "t": "x"}})
+    _set_config(config, notify={"send_when_empty": False})
+    jobot_main.run(args)  # nothing new, send_when_empty is off – but a shortlisted job closes soon
+    assert len(sent) == 2 and sent[1].jobs == []
+    [reminder] = sent[1].reminders
+    assert reminder["title"] == "Embedded Engineer" and reminder["days"] == 2
+    assert "Closing soon" in sent[1].email_text()

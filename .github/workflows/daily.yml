@@ -27,6 +27,10 @@ on:
         description: "Only refresh the career report (resume analysis, skill gaps, project ideas) - no jobs are fetched or sent"
         type: boolean
         default: false
+      prepare:
+        description: "Only prepare for one job: its id (shown on the dashboard) - cover letter, bullets, interview questions, study plan"
+        required: false
+        default: ""
       dry_run:
         description: "Only print results in the log; don't notify or remember"
         type: boolean
@@ -80,6 +84,7 @@ jobs:
           IN_QUALIFICATIONS: ${{ inputs.qualifications }}
           IN_RESEND_ALL: ${{ inputs.resend_all }}
           IN_CAREER: ${{ inputs.career }}
+          IN_PREPARE: ${{ inputs.prepare }}
           IN_DRY_RUN: ${{ inputs.dry_run }}
         run: |
           args=()
@@ -88,6 +93,7 @@ jobs:
           [ -n "$IN_QUALIFICATIONS" ] && args+=(--qualifications "$IN_QUALIFICATIONS")
           [ "$IN_RESEND_ALL" = "true" ] && args+=(--all)
           [ "$IN_CAREER" = "true" ] && args+=(--career)
+          [ -n "$IN_PREPARE" ] && args+=(--prepare "$IN_PREPARE")
           [ "$IN_DRY_RUN" = "true" ] && args+=(--dry-run)
           python -m jobot "${args[@]}"
 

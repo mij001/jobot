@@ -34,6 +34,7 @@ class Report:
     read_note: str | None = None  # what the posting reader did
     history_note: str | None = None  # why no history is being kept, if so
     dashboard_url: str | None = None  # the page with your history and shortlist
+    reminders: list[dict] = field(default_factory=list)  # shortlisted jobs closing soon
 
     # -- shared helpers ---------------------------------------------------
 
@@ -83,13 +84,18 @@ class Report:
                 lines.append(f"{s.name}: {s.fetched} scanned")
         return lines
 
+    @staticmethod
+    def _closes(r: dict) -> str:
+        when = "today" if r["days"] == 0 else "tomorrow" if r["days"] == 1 else f"in {r['days']} days"
+        return f"closes {r['closing']} ({when})"
+
     # -- Telegram -----------------------------------------------------------
 
     def _telegram_job(self, job: Job) -> str:
         lines = [f"<b>{escape(job.title)}</b>"]
         org = " · ".join(escape(x) for x in (job.company, job.location) if x)
         if org:
-            lines.append(f"🏢 {org}")
+            lines.append(f"🏢 {org}" + (" 👀" if job.watched else ""))
         lines.append(f"🎯 {escape(self.subfield_labels(job))}")
         if needs := self.needs(job):
             lines.append(f"🎓 {escape(needs)}")
@@ -112,6 +118,10 @@ class Report:
         header = f"🔌 <b>{escape(self.title)}</b>"
         footer = "<i>" + escape(" · ".join(self.source_summary())) + "</i>"
         blocks: list[str] = []
+        if self.reminders:
+            blocks.append("⏰ <b>Closing soon – your shortlist</b>\n" + "\n".join(
+                f'• <a href="{escape(r["url"], quote=True)}">{escape(r["title"])}</a>'
+                f'{" – " + escape(r["company"]) if r["company"] else ""} ({escape(self._closes(r))})' for r in self.reminders))
         if picks := self.top_picks():
             blocks.append("⭐ <b>Top picks for you</b>\n" + "\n".join(
                 f'• <a href="{escape(j.url, quote=True)}">{escape(j.title)}</a>'
@@ -142,6 +152,11 @@ class Report:
 
     def email_text(self) -> str:
         out = [self.title, ""]
+        if self.reminders:
+            out.append("== Closing soon – your shortlist ==")
+            out.extend(f"* {r['title']}{' – ' + r['company'] if r['company'] else ''} ({self._closes(r)}): {r['url']}"
+                       for r in self.reminders)
+            out.append("")
         if picks := self.top_picks():
             out.append("== Top picks for you ==")
             out.extend(f"* {j.title}{' – ' + j.company if j.company else ''} ({j.ai_score}/10): {j.url}" for j in picks)
@@ -153,7 +168,7 @@ class Report:
                 out.append(f"* {j.title}")
                 org = " · ".join(x for x in (j.company, j.location) if x)
                 if org:
-                    out.append(f"  {org}")
+                    out.append(f"  {org}" + ("  (watching)" if j.watched else ""))
                 out.append(f"  Field: {self.subfield_labels(j)}")
                 if needs := self.needs(j):
                     out.append(f"  Needs: {needs}")
@@ -184,6 +199,13 @@ class Report:
             '<div style="font-family:Arial,Helvetica,sans-serif;max-width:680px">',
             f'<h2 style="color:#1a3d6d">🔌 {escape(self.title)}</h2>',
         ]
+        if self.reminders:
+            rows = "".join(
+                f'<li><a href="{escape(r["url"], quote=True)}">{escape(r["title"])}</a>'
+                f'{" – " + escape(r["company"]) if r["company"] else ""} <b>({escape(self._closes(r))})</b></li>'
+                for r in self.reminders)
+            parts.append('<div style="background:#ffe9e6;border-radius:12px;padding:10px 14px;margin:0 0 16px">'
+                         f'<b>⏰ Closing soon – your shortlist</b><ul style="margin:6px 0 0;padding-left:20px">{rows}</ul></div>')
         if picks := self.top_picks():
             items = "".join(
                 f'<li><a href="{escape(j.url, quote=True)}">{escape(j.title)}</a>'
@@ -197,7 +219,7 @@ class Report:
             for j in jobs:
                 links = [f'<a href="{escape(j.url, quote=True)}">{escape(j.source)}</a>']
                 links += [f'<a href="{escape(u, quote=True)}">{escape(s)}</a>' for s, u in j.also_on]
-                org = " · ".join(escape(x) for x in (j.company, j.location) if x)
+                org = " · ".join(escape(x) for x in (j.company, j.location) if x) + (" 👀" if j.watched else "")
                 closing = f" · closes {escape(j.closing)}" if j.closing else ""
                 salary = f" · {escape(j.salary)}" if j.salary else ""
                 fit = (f'<br><span style="color:#1a6d3d;font-size:13px">⭐ {j.ai_score}/10 – '

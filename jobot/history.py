@@ -33,25 +33,31 @@ MAX_MONTHS = 24
 TIERS = ("top", "good", "maybe", "low")  # shown as Top picks / Good fits / Worth a look / Low priority
 
 
+_UP = {"maybe": "good", "good": "top"}
+
+
 def tier(score: int | None, hidden: bool, title: str, subfields: list[str], level: str | None,
-         qualifications: list[str], cfg: Config) -> str:
-    """How much a job deserves your attention: top | good | maybe | low."""
+         qualifications: list[str], cfg: Config, watched: bool = False) -> str:
+    """How much a job deserves your attention: top | good | maybe | low.
+    A job from a watched employer moves up one tier (unless the AI held it back)."""
     if hidden:
         return "low"
     if score is not None:
         top = cfg.top_picks_score or 8
-        return "top" if score >= top else "good" if score >= 6 else "maybe"
-    # No AI review: judge by how clearly the advert fits what you asked for.
-    points = 0
-    if any(matching_keywords(sf.keywords, title) for k in subfields if (sf := cfg.subfield(k))):
-        points += 1  # the title itself says EEE
-    points += bool(qualifications)  # the advert states a qualification you accept
-    points += bool(level)  # and a level you accept
-    return "good" if points >= 2 else "maybe"
+        found = "top" if score >= top else "good" if score >= 6 else "maybe"
+    else:
+        # No AI review: judge by how clearly the advert fits what you asked for.
+        points = 0
+        if any(matching_keywords(sf.keywords, title) for k in subfields if (sf := cfg.subfield(k))):
+            points += 1  # the title itself says EEE
+        points += bool(qualifications)  # the advert states a qualification you accept
+        points += bool(level)  # and a level you accept
+        found = "good" if points >= 2 else "maybe"
+    return _UP.get(found, found) if watched else found
 
 
 def importance(job: Job, cfg: Config, hidden: bool = False) -> str:
-    return tier(job.ai_score, hidden, job.title, job.subfields, job.level, job.qualifications, cfg)
+    return tier(job.ai_score, hidden, job.title, job.subfields, job.level, job.qualifications, cfg, job.watched)
 
 
 def job_entry(job: Job, day: date, hidden: bool, cfg: Config) -> dict:
@@ -62,7 +68,7 @@ def job_entry(job: Job, day: date, hidden: bool, cfg: Config) -> dict:
         "level": job.level, "qualifications": list(job.qualifications), "min_years": job.min_years,
         "ai_score": job.ai_score, "ai_reason": job.ai_reason, "importance": importance(job, cfg, hidden),
         "posted": job.posted, "closing": job.closing, "requirements": job.requirements,
-        "contact": job.contact, "salary": job.salary, "read_via": job.read_via,
+        "contact": job.contact, "salary": job.salary, "read_via": job.read_via, "watched": job.watched or None,
         # the skills / tools / certificates the advert mentions (drives the dashboard's skill demand)
         "skills": extract_skills(f"{job.title}\n{job.description}", cfg.coach.extra_skills),
     }

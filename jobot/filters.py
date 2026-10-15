@@ -188,6 +188,8 @@ def qualification_allowed(keys: list[str], cfg: Config) -> bool:
 def is_excluded(job: Job, cfg: Config) -> bool:
     if matching_keywords(cfg.exclude_title_keywords, job.title):
         return True
+    if cfg.avoid_companies and matching_keywords(cfg.avoid_companies, job.company):
+        return True
     if not cfg.include_overseas and matching_keywords(cfg.overseas_keywords, f"{job.title}\n{job.location}"):
         return True
     if cfg.locations and job.location:
@@ -220,6 +222,7 @@ def select_jobs(jobs: list[Job], cfg: Config) -> list[Job]:
         job.also_on = []
         if is_excluded(job, cfg):
             continue
+        job.watched = bool(cfg.watch_companies and matching_keywords(cfg.watch_companies, job.company))
         preset = [k for k in job.preset if (sf := cfg.subfield(k)) and sf.enabled]
         job.subfields = preset + [k for k in match_subfields(job, cfg) if k not in preset]
         if not job.subfields:
