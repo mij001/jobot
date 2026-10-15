@@ -266,6 +266,10 @@ def build_report(cfg: Config, env: dict[str, str], entries: list[dict], marks: d
             report["projects"] = _projects(data, coach.projects)
         else:
             notes.append(f"Project ideas unavailable ({error}).")
+    elif not market["skills"]:
+        if market["jobs"] >= MIN_JOBS:
+            notes.append("No recognisable skills were found in the stored adverts, so there is nothing to compare your resume "
+                         "with yet – they fill in as new adverts are read.")
     elif market["jobs"] >= MIN_JOBS:
         notes.append("Your resume already shows every skill that recent adverts ask for – no gaps to build projects for.")
 
@@ -309,6 +313,8 @@ def run(cfg: Config, env: dict[str, str], history: History, today: date, post=re
     if rsm is None:
         log.info("Career coach: no resume saved yet (upload one on the dashboard's Coach tab)")
         return None
+    if history.backfill_skills(cfg) and save:
+        history.flush_jobs()
     entries = history.entries(today - timedelta(days=max(cfg.coach.window_days, 30)))
     marks = history.vault.read("marks") or {}
     report = build_report(cfg, env, entries, marks if isinstance(marks, dict) else {}, rsm, today, post, sleep)

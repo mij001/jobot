@@ -260,3 +260,13 @@ def test_prepare_for_a_job_saves_and_keeps_only_the_newest(tmp_path, cfg, fast_v
     assert coach.prepare(cfg, {"DASHBOARD_PASSWORD": "pw"}, History.open(tmp_path, env), "t:1", TODAY, post=fake) is None  # no key
     no_resume = coach.prepare(cfg, {**env, "DASHBOARD_PASSWORD": "pw"}, History.open(tmp_path, env), "t:4", TODAY, post=fake, save=False)
     assert no_resume is not None and History.open(tmp_path, env).vault.read("prepare").keys() == {"t:2", "t:3"}  # save=False writes nothing
+
+
+def test_empty_demand_is_not_reported_as_a_complete_resume(cfg):
+    from jobot import resume as resume_mod
+    entries = [{"id": f"t:{i}", "date": TODAY.isoformat(), "title": "Engineer", "importance": "good"} for i in range(6)]
+    rsm = resume_mod.Resume(name="pasted text", kind="text", updated="", text="Python, MATLAB")
+    report = coach.build_report(cfg, {"AI_API_KEY": "k"}, entries, {}, rsm, TODAY, post=FakeAI(), sleep=lambda s: None)
+    assert report["demand"]["skills"] == []
+    assert not any("already shows every skill" in n for n in report["notes"])
+    assert any("No recognisable skills" in n for n in report["notes"])

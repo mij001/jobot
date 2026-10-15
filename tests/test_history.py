@@ -147,3 +147,23 @@ def test_shard_list_has_no_duplicates_and_keeps_other_files(tmp_path, cfg, fast_
     assert json.loads((tmp_path / "history" / "vault.json").read_text())["shards"] == shards
     assert [e["title"] for e in h.entries(date(2026, 10, 1))] == ["Electrical Engineer"]
     assert h.entries(date(2026, 11, 1)) == []
+
+
+def test_backfill_gives_earlier_jobs_their_skills_and_only_rewrites_what_changed(tmp_path, cfg, fast_vault):
+    h = history.History.open(tmp_path, {"DASHBOARD_PASSWORD": PASSWORD})
+    old = [{"id": "t:1", "date": "2026-09-20", "title": "Controls Engineer", "requirements": "PLC and SCADA experience", "importance": "top"},
+           {"id": "t:2", "date": "2026-09-21", "title": "Chef", "importance": "low"}]
+    done = [{"id": "t:3", "date": "2026-10-01", "title": "Electrical Engineer", "skills": ["AutoCAD"], "importance": "good"}]
+    h.vault.write("jobs-2026-09", old)
+    h.vault.write("jobs-2026-10", done)
+    h.vault.save_meta(["jobs-2026-09", "jobs-2026-10", "stats"])
+    h = history.History.open(tmp_path, {"DASHBOARD_PASSWORD": PASSWORD})
+    october = (tmp_path / "history" / "jobs-2026-10.enc.json").read_text()
+
+    assert h.backfill_skills(cfg) == 1  # only the controls job mentions anything
+    h.flush_jobs()
+    rows = {e["id"]: e for e in h.vault.read("jobs-2026-09")}
+    assert rows["t:1"]["skills"] == ["PLC", "SCADA / HMI"] and "skills" not in rows["t:2"]
+    assert (tmp_path / "history" / "jobs-2026-10.enc.json").read_text() == october  # untouched
+    assert h.backfill_skills(cfg) == 0  # nothing left to add
+    assert {e["id"]: e.get("skills") for e in h.entries(date(2026, 9, 1))}["t:1"] == ["PLC", "SCADA / HMI"]

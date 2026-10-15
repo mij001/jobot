@@ -87,6 +87,7 @@ class History:
         self.suggestions: list[dict] = []
         self.has_stats = False
         self._shards: dict[str, dict[str, dict]] = {}  # loaded / changed this run
+        self._dirty: set[str] = set()  # shards changed since they were last written
         self._names: set[str] = set(vault.meta.get("shards", [])) - {STATS} if vault else set()
         self._legacy: list[Path] = []
 
@@ -131,6 +132,7 @@ class History:
             self._shards[name] = {e["id"]: e for e in (self.vault.read(name) or [])}
         self._shards[name][entry["id"]] = entry
         self._names.add(name)
+        self._dirty.add(name)
 
     def import_legacy(self, data_dir: str | Path, cfg: Config) -> None:
         """Pick up the old plain-text stats.json / jobs_log.csv (once); they are
@@ -165,6 +167,32 @@ class History:
             out.extend(e for e in rows if e.get("date", "") >= since.isoformat())
         return out
 
+    def backfill_skills(self, cfg: Config) -> int:
+        """Jobs logged before skills were recorded get theirs from the text kept with them
+        (title, what the advert asks for, the AI's reason). Only shards that change are rewritten."""
+        if not self.enabled:
+            return 0
+        changed = 0
+        for name in sorted(n for n in self._names if n.startswith("jobs-")):
+            rows = self._shards.get(name)
+            if rows is None:
+                rows = {e["id"]: e for e in (self.vault.read(name) or [])}
+            n = 0
+            for entry in rows.values():
+                if "skills" in entry:
+                    continue
+                text = " ".join(str(entry.get(k) or "") for k in ("title", "requirements", "ai_reason"))
+                if found := extract_skills(text, cfg.coach.extra_skills):
+                    entry["skills"] = found
+                    n += 1
+            if n:
+                self._shards[name] = rows
+                self._dirty.add(name)
+                changed += n
+        if changed:
+            log.info("Skills added to %d earlier job(s) in the history", changed)
+        return changed
+
     def write_named(self, name: str, obj: Any) -> None:
         """Save another encrypted file next to the history (e.g. the career report)."""
         if not self.enabled:
@@ -175,6 +203,16 @@ class History:
 
     # -- saving ---------------------------------------------------------------
 
+    def flush_jobs(self) -> None:
+        """Write the job shards that changed (and the shard list), nothing else."""
+        if not self.enabled:
+            return
+        for name in sorted(self._dirty & self._names):
+            entries = self._shards[name]
+            self.vault.write(name, sorted(entries.values(), key=lambda e: (e["date"], e["id"])))
+        self._dirty.clear()
+        self.vault.save_meta(sorted({STATS, *self._names}))
+
     def save(self) -> None:
         if not self.enabled:
             return
@@ -183,9 +221,7 @@ class History:
             self.vault.path(name).unlink(missing_ok=True)
             self._shards.pop(name, None)
         self._names = {n for n in self._names if not n.startswith("jobs-")} | set(newest)
-        for name, entries in self._shards.items():
-            if name in self._names:
-                self.vault.write(name, sorted(entries.values(), key=lambda e: (e["date"], e["id"])))
+        self.flush_jobs()
         self.vault.write(STATS, {"runs": self.runs, "suggestions": self.suggestions})
         self.vault.save_meta(sorted({STATS, *self._names}))
         for path in self._legacy:  # the encrypted copy exists now

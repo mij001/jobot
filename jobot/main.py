@@ -295,6 +295,7 @@ def run(argv: list[str] | None = None) -> int:
         history.add_run(record)
         history.suggestions = tips
         history.add_jobs(today, new, {j.uid for j in new} - {j.uid for j in shown}, cfg)
+        history.backfill_skills(cfg)
         history.save()
         if history.enabled and coach.weekly_due(cfg, today):  # never lets the coach break the daily run
             try:

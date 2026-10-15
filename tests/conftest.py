@@ -14,6 +14,12 @@ FIXTURES = Path(__file__).parent / "fixtures"
 DEFAULT_CONFIG = FIXTURES / "default_config.yaml"
 
 
+@pytest.fixture(autouse=True)
+def _fresh_ai_state():
+    from jobot import ai
+    ai._NO_QUOTA.clear()  # "no free quota" is remembered for a run; every test is its own run
+
+
 @pytest.fixture
 def cfg():
     """The default settings (a frozen copy – your own config.yaml may differ)."""

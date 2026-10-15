@@ -89,6 +89,9 @@ class ReviewResult:
 BUSY_WAIT = 20  # seconds before retrying a model that answered 5xx
 
 
+_NO_QUOTA: set[str] = set()  # models this run learned have no free quota on this key: not asked again
+
+
 class _ModelGone(Exception):
     """This model can't answer (retired, or overloaded right now): try the next one."""
 
@@ -154,6 +157,7 @@ def _ask(url: str, model: str, key: str, messages: list[dict], post, sleep, temp
     for attempt in range(2):
         resp = post(url, json=body, headers=headers, timeout=120)
         if resp.status_code == 429 and re.search(r"limit:\s*0\b", resp.text):  # no free quota for this model at all
+            _NO_QUOTA.add(model)
             raise _ModelGone(f"{model}: no free quota ({_error_text(resp)})")
         if resp.status_code == 429 and attempt == 0:
             wait = int(resp.headers.get("retry-after") or 60)
@@ -195,6 +199,8 @@ def ask_json(system: str, user: str, cfg: Config, env: dict[str, str], post=requ
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
     problem = "none of the configured models is available"
     for model in models:
+        if model in _NO_QUOTA and any(m not in _NO_QUOTA for m in models):  # no point asking again
+            continue
         try:
             reply = _ask(url, model, key, messages, post, sleep, temperature)
         except _ModelGone as exc:

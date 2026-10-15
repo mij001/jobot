@@ -218,6 +218,12 @@ def test_pro_without_free_quota_falls_back_without_waiting(cfg):
     assert data == {"ok": True} and model == "gemini-3.8-flash" and waits == []  # no 60 s wait for a quota that is zero
     assert used == ["gemini-pro-latest", "gemini-3.8-flash"]
 
+    # the next question in the same run doesn't ask Pro again
+    used.clear()
+    ai.ask_json("s", "u", cfg, {"AI_API_KEY": "k"}, post=post, sleep=waits.append)
+    assert used == ["gemini-3.8-flash"]
+    ai._NO_QUOTA.clear()
+
     # an ordinary rate limit on one model (after its retry) also moves on rather than giving up
     used.clear()
     limited = FakeResp(429, text="slow down", headers={"retry-after": "1"})
