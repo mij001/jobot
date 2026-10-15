@@ -106,7 +106,9 @@ def _error_text(resp) -> str:
     except Exception:
         message = resp.text
     message = " ".join(str(message).split())
-    return f"HTTP {resp.status_code}: " + (message[:90] + "…" if len(message) > 90 else message)
+    message = message[:90] + "…" if len(message) > 90 else message
+    quota = re.findall(r'"quotaId":\s*"([^"]+)"', resp.text)  # which limit was hit (per minute, per day ...)
+    return f"HTTP {resp.status_code}: {message}" + (f" [{quota[0]}]" if quota else "")
 
 
 def endpoint(cfg: Config, env: dict[str, str], smart: bool = False) -> tuple[str, list[str]]:
@@ -151,14 +153,18 @@ def _job_payload(job: Job) -> dict:
     }
 
 
-def _ask(url: str, model: str, key: str, messages: list[dict], post, sleep, temperature: float = 0.1) -> str:
+def _ask(url: str, model: str, key: str, messages: list[dict], post, sleep, temperature: float = 0.1,
+         last: bool = True) -> str:
+    """One chat call. `last` = no other model to fall back on, so a rate limit is worth waiting out."""
     body = {"model": model, "messages": messages, "temperature": temperature}
     headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
     for attempt in range(2):
         resp = post(url, json=body, headers=headers, timeout=120)
-        if resp.status_code == 429 and re.search(r"limit:\s*0\b", resp.text):  # no free quota for this model at all
-            _NO_QUOTA.add(model)
-            raise _ModelGone(f"{model}: no free quota ({_error_text(resp)})")
+        if resp.status_code == 429 and re.search(r"limit:\s*0\b|PerDay|per day", resp.text, re.I):
+            _NO_QUOTA.add(model)  # none (or no more today) on this key: waiting won't help
+            raise _ModelGone(f"{model}: out of free quota ({_error_text(resp)})")
+        if resp.status_code == 429 and not last:  # every model has its own quota: ask the next one at once
+            raise _ModelGone(f"{model}: rate-limited ({_error_text(resp)})")
         if resp.status_code == 429 and attempt == 0:
             wait = int(resp.headers.get("retry-after") or 60)
             log.info("AI rate limit hit; waiting %ds", wait)
@@ -198,11 +204,12 @@ def ask_json(system: str, user: str, cfg: Config, env: dict[str, str], post=requ
         return None, None, str(exc)
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
     problem = "none of the configured models is available"
-    for model in models:
+    for i, model in enumerate(models):
         if model in _NO_QUOTA and any(m not in _NO_QUOTA for m in models):  # no point asking again
             continue
+        later = [m for m in models[i + 1:] if m not in _NO_QUOTA]
         try:
-            reply = _ask(url, model, key, messages, post, sleep, temperature)
+            reply = _ask(url, model, key, messages, post, sleep, temperature, last=not later)
         except _ModelGone as exc:
             log.info("AI model unavailable, trying the next one: %s", exc)
             problem = str(exc).split(": ", 1)[-1]
@@ -316,7 +323,7 @@ def _review(jobs, cfg, env, post, sleep, profile_extra="") -> ReviewResult:
         reply, last_problem = None, ""
         while models and reply is None:
             try:
-                reply = _ask(url, models[0], key, messages, post, sleep)
+                reply = _ask(url, models[0], key, messages, post, sleep, last=len(models) == 1)
                 result.model = models[0]
             except _ModelGone as exc:
                 log.warning("AI model unavailable, trying the next one: %s", exc)

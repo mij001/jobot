@@ -89,8 +89,27 @@ def test_rate_limit_waits_then_retries(cfg):
         n["calls"] += 1
         return FakeResp(429, headers={"retry-after": "20"}) if n["calls"] == 1 else reply([])
 
+    cfg.ai.models = ["only-model"]  # nothing to fall back on: wait out the limit, then ask again
     ai.review(make_jobs(1), cfg, {"AI_API_KEY": "k"}, post=post, sleep=waits.append)
     assert waits == [20] and n["calls"] == 2
+
+
+def test_rate_limit_moves_straight_to_the_next_model_and_daily_limits_are_remembered(cfg):
+    waits, used = [], []
+    per_minute = FakeResp(429, text='{"error": {"message": "slow down", "details": [{"violations": [{"quotaId": "GenerateRequestsPerMinutePerModel-FreeTier"}]}]}}')
+    per_day = FakeResp(429, text='{"error": {"message": "exceeded", "details": [{"violations": [{"quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier"}]}]}}')
+    ok = FakeResp(body={"choices": [{"message": {"content": '{"ok": true}'}}]})
+    answers = {"gemini-pro-latest": per_minute, "gemini-3.8-flash": per_day}
+
+    def post(url, json, headers, timeout):
+        used.append(json["model"])
+        return answers.get(json["model"], ok)
+
+    data, model, _ = ai.ask_json("s", "u", cfg, {"AI_API_KEY": "k"}, post=post, sleep=waits.append)
+    assert data == {"ok": True} and model == "gemini-flash-latest" and waits == []  # nobody waited 60 s for a model
+    assert used == ["gemini-pro-latest", "gemini-3.8-flash", "gemini-flash-latest"]
+    assert "gemini-3.8-flash" in ai._NO_QUOTA and "gemini-pro-latest" not in ai._NO_QUOTA  # a per-day limit sticks, a per-minute one doesn't
+    assert "[GenerateRequestsPerDayPerProjectPerModel-FreeTier]" in ai._error_text(per_day)
 
 
 def test_groq_and_custom_endpoints(cfg):
@@ -224,13 +243,13 @@ def test_pro_without_free_quota_falls_back_without_waiting(cfg):
     assert used == ["gemini-3.8-flash"]
     ai._NO_QUOTA.clear()
 
-    # an ordinary rate limit on one model (after its retry) also moves on rather than giving up
+    # an ordinary rate limit on one model also moves on rather than giving up
     used.clear()
     limited = FakeResp(429, text="slow down", headers={"retry-after": "1"})
     data, model, _ = ai.ask_json("s", "u", cfg, {"AI_API_KEY": "k"}, sleep=waits.append, post=lambda url, json, headers, timeout:
                                  used.append(json["model"]) or (limited if json["model"] == "gemini-pro-latest" else
                                  FakeResp(body={"choices": [{"message": {"content": '{"ok": 1}'}}]})))
-    assert data == {"ok": 1} and used == ["gemini-pro-latest", "gemini-pro-latest", "gemini-3.8-flash"]
+    assert data == {"ok": 1} and used == ["gemini-pro-latest", "gemini-3.8-flash"]  # on to the next model at once
 
 
 def test_replies_with_raw_line_breaks_inside_strings_are_still_read():
