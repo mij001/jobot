@@ -22,6 +22,7 @@ from typing import Any
 from .config import Config
 from .filters import matching_keywords
 from .models import Job
+from .skills import extract_skills
 from .vault import Vault, WrongPassword
 
 log = logging.getLogger(__name__)
@@ -62,6 +63,8 @@ def job_entry(job: Job, day: date, hidden: bool, cfg: Config) -> dict:
         "ai_score": job.ai_score, "ai_reason": job.ai_reason, "importance": importance(job, cfg, hidden),
         "posted": job.posted, "closing": job.closing, "requirements": job.requirements,
         "contact": job.contact, "salary": job.salary, "read_via": job.read_via,
+        # the skills / tools / certificates the advert mentions (drives the dashboard's skill demand)
+        "skills": extract_skills(f"{job.title}\n{job.description}", cfg.coach.extra_skills),
     }
     return {k: v for k, v in entry.items() if v not in ("", None, [])}
 
@@ -78,7 +81,7 @@ class History:
         self.suggestions: list[dict] = []
         self.has_stats = False
         self._shards: dict[str, dict[str, dict]] = {}  # loaded / changed this run
-        self._names: set[str] = set(vault.meta.get("shards", [])) if vault else set()
+        self._names: set[str] = set(vault.meta.get("shards", [])) - {STATS} if vault else set()
         self._legacy: list[Path] = []
 
     @property
@@ -143,21 +146,42 @@ class History:
         if self._legacy:
             log.info("Moving %d earlier run(s) and the jobs log into the encrypted history", len(self.runs))
 
+    # -- reading back -----------------------------------------------------------
+
+    def entries(self, since: date) -> list[dict]:
+        """Every logged job first seen on or after `since` (oldest month first)."""
+        if not self.enabled:
+            return []
+        first = _month(since.isoformat())
+        out: list[dict] = []
+        for name in sorted(n for n in self._names if n.startswith("jobs-") and n >= first):
+            rows = list(self._shards[name].values()) if name in self._shards else (self.vault.read(name) or [])
+            out.extend(e for e in rows if e.get("date", "") >= since.isoformat())
+        return out
+
+    def write_named(self, name: str, obj: Any) -> None:
+        """Save another encrypted file next to the history (e.g. the career report)."""
+        if not self.enabled:
+            return
+        self.vault.write(name, obj)
+        self._names.add(name)
+        self.vault.save_meta(sorted({STATS, *self._names}))
+
     # -- saving ---------------------------------------------------------------
 
     def save(self) -> None:
         if not self.enabled:
             return
-        newest = sorted(self._names)[-MAX_MONTHS:]
-        for name in sorted(self._names - set(newest)):  # very old months fall away
+        newest = sorted(n for n in self._names if n.startswith("jobs-"))[-MAX_MONTHS:]
+        for name in sorted(n for n in self._names if n.startswith("jobs-") and n not in newest):  # very old months fall away
             self.vault.path(name).unlink(missing_ok=True)
             self._shards.pop(name, None)
-        self._names = set(newest)
+        self._names = {n for n in self._names if not n.startswith("jobs-")} | set(newest)
         for name, entries in self._shards.items():
             if name in self._names:
                 self.vault.write(name, sorted(entries.values(), key=lambda e: (e["date"], e["id"])))
         self.vault.write(STATS, {"runs": self.runs, "suggestions": self.suggestions})
-        self.vault.save_meta([STATS, *self._names])
+        self.vault.save_meta(sorted({STATS, *self._names}))
         for path in self._legacy:  # the encrypted copy exists now
             path.unlink(missing_ok=True)
         self._legacy = []

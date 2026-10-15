@@ -14,6 +14,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass
 from typing import Callable
@@ -29,12 +30,17 @@ log = logging.getLogger(__name__)
 PROVIDERS = {
     "gemini": {
         "url": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+        # Fast and cheap: scores the day's jobs.
         "models": ["gemini-flash-latest", "gemini-3.8-flash", "gemini-flash-lite-latest"],
+        # Smartest first, for the career coach. Whether Pro is free depends on your key; when it
+        # isn't (quota 0, retired, busy) the next model answers instead.
+        "smart_models": ["gemini-pro-latest", "gemini-3.8-flash", "gemini-flash-latest"],
         "vision": True,  # can read poster images
     },
     "groq": {
         "url": "https://api.groq.com/openai/v1/chat/completions",
         "models": ["openai/gpt-oss-120b", "llama-3.3-70b-versatile"],
+        "smart_models": ["openai/gpt-oss-120b", "llama-3.3-70b-versatile"],
     },
 }
 
@@ -100,14 +106,20 @@ def _error_text(resp) -> str:
     return f"HTTP {resp.status_code}: " + (message[:90] + "…" if len(message) > 90 else message)
 
 
-def endpoint(cfg: Config, env: dict[str, str]) -> tuple[str, list[str]]:
+def endpoint(cfg: Config, env: dict[str, str], smart: bool = False) -> tuple[str, list[str]]:
+    """The chat URL and the models to try, in order. `smart` picks the stronger models
+    (ai.smart_models, else the provider's own list, else your ai.models)."""
     preset = PROVIDERS.get(cfg.ai.provider, {})
     url = env.get("AI_BASE_URL") or preset.get("url")
     if not url:
         raise ValueError(f"unknown AI provider {cfg.ai.provider!r}; set AI_BASE_URL")
     if not url.rstrip("/").endswith("/chat/completions"):
         url = url.rstrip("/") + "/chat/completions"
-    models = cfg.ai.models or preset.get("models") or []
+    if smart:
+        models = cfg.ai.smart_models or (cfg.ai.models if env.get("AI_BASE_URL") else preset.get("smart_models")) \
+            or cfg.ai.models or preset.get("models") or []
+    else:
+        models = cfg.ai.models or preset.get("models") or []
     if not models:
         raise ValueError("no AI model configured (ai.models)")
     return url, models
@@ -136,11 +148,13 @@ def _job_payload(job: Job) -> dict:
     }
 
 
-def _ask(url: str, model: str, key: str, messages: list[dict], post, sleep) -> str:
-    body = {"model": model, "messages": messages, "temperature": 0.1}
+def _ask(url: str, model: str, key: str, messages: list[dict], post, sleep, temperature: float = 0.1) -> str:
+    body = {"model": model, "messages": messages, "temperature": temperature}
     headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
     for attempt in range(2):
         resp = post(url, json=body, headers=headers, timeout=120)
+        if resp.status_code == 429 and re.search(r"limit:\s*0\b", resp.text):  # no free quota for this model at all
+            raise _ModelGone(f"{model}: no free quota ({_error_text(resp)})")
         if resp.status_code == 429 and attempt == 0:
             wait = int(resp.headers.get("retry-after") or 60)
             log.info("AI rate limit hit; waiting %ds", wait)
@@ -156,6 +170,47 @@ def _ask(url: str, model: str, key: str, messages: list[dict], post, sleep) -> s
             raise RuntimeError(_error_text(resp))
         return resp.json()["choices"][0]["message"]["content"] or ""
     raise RuntimeError("rate-limited")
+
+
+def parse_object(text: str) -> dict:
+    """The JSON object in a model reply, tolerating ``` fences or chatter."""
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end <= start:
+        raise ValueError("reply contained no JSON object")
+    data = json.loads(text[start:end + 1])
+    if not isinstance(data, dict):
+        raise ValueError("reply JSON is not an object")
+    return data
+
+
+def ask_json(system: str, user: str, cfg: Config, env: dict[str, str], post=requests.post, sleep=time.sleep,
+             temperature: float = 0.3, smart: bool = True) -> tuple[dict | None, str | None, str | None]:
+    """One question, one JSON answer, trying the models in turn (the stronger `smart` list by
+    default). Returns (answer, model used, error) – the answer is None when nothing worked."""
+    key = env.get("AI_API_KEY", "")
+    try:
+        url, models = endpoint(cfg, env, smart=smart)
+    except ValueError as exc:
+        return None, None, str(exc)
+    messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+    problem = "none of the configured models is available"
+    for model in models:
+        try:
+            reply = _ask(url, model, key, messages, post, sleep, temperature)
+        except _ModelGone as exc:
+            log.info("AI model unavailable, trying the next one: %s", exc)
+            problem = str(exc).split(": ", 1)[-1]
+            continue
+        except (requests.RequestException, RuntimeError, KeyError, IndexError, ValueError) as exc:
+            log.info("AI model %s failed (%s), trying the next one", model, str(exc)[:120])
+            problem = f"{model}: {str(exc)[:120]}"  # e.g. rate-limited: another model has its own quota
+            continue
+        try:
+            return parse_object(reply), model, None
+        except ValueError as exc:
+            log.info("AI reply from %s not understood (%s)", model, exc)
+            problem = f"reply not understood ({exc})"
+    return None, None, problem
 
 
 def is_hidden(job: Job, cfg: Config) -> bool:
@@ -215,14 +270,15 @@ def poster_reader(cfg: Config, env: dict[str, str], post=requests.post,
 
 
 def review(jobs: list[Job], cfg: Config, env: dict[str, str], post=requests.post,
-           sleep=time.sleep) -> ReviewResult:
-    """Score jobs in place (job.ai_score / ai_reason / level); see is_hidden()."""
-    result = _review(jobs, cfg, env, post, sleep)
+           sleep=time.sleep, profile_extra: str = "") -> ReviewResult:
+    """Score jobs in place (job.ai_score / ai_reason / level); see is_hidden().
+    `profile_extra` is added to the seeker profile (the coach's resume summary)."""
+    result = _review(jobs, cfg, env, post, sleep, profile_extra)
     result.hidden = sum(is_hidden(j, cfg) for j in jobs)
     return result
 
 
-def _review(jobs, cfg, env, post, sleep) -> ReviewResult:
+def _review(jobs, cfg, env, post, sleep, profile_extra="") -> ReviewResult:
     result = ReviewResult()
     key = env.get("AI_API_KEY", "")
     if not jobs:
@@ -246,6 +302,7 @@ def _review(jobs, cfg, env, post, sleep) -> ReviewResult:
         messages = [
             {"role": "system", "content": system},
             {"role": "user", "content": "Seeker profile:\n" + cfg.ai.profile.strip()
+                + (f"\n\nSummary of the seeker's resume:\n{profile_extra.strip()}" if profile_extra.strip() else "")
                 + "\n\nJob adverts:\n" + json.dumps([_job_payload(j) for j in batch], ensure_ascii=False)},
         ]
         if i:

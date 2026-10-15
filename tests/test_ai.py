@@ -156,3 +156,72 @@ def test_overloaded_model_falls_back_and_error_is_short(cfg):
     result = ai.review(make_jobs(1), cfg, {"AI_API_KEY": "k"}, post=lambda *a, **k: overloaded, sleep=lambda s: None)
     assert result.error.startswith("no model available – HTTP 503: This model is currently")
     assert ai._error_text(overloaded) == "HTTP 503: This model is currently experiencing high demand. Spikes in demand are usually temporary."
+
+
+def test_ask_json_falls_back_and_parses_fenced_replies(cfg):
+    used = []
+
+    def post(url, json, headers, timeout):
+        used.append(json["model"])
+        if len(used) == 1:
+            return FakeResp(404, text='{"error": "model not found"}')
+        return FakeResp(body={"choices": [{"message": {"content": 'Sure!\n```json\n{"projects": [1, 2]}\n```'}}]})
+
+    data, model, error = ai.ask_json("sys", "user", cfg, {"AI_API_KEY": "k"}, post=post, sleep=lambda s: None)
+    assert data == {"projects": [1, 2]} and model == "gemini-3.8-flash" and error is None
+    assert used == ["gemini-pro-latest", "gemini-3.8-flash"]  # the stronger list, Pro first
+
+    data, model, error = ai.ask_json("s", "u", cfg, {"AI_API_KEY": "k"}, sleep=lambda s: None,
+                                     post=lambda *a, **k: FakeResp(body={"choices": [{"message": {"content": "no json here"}}]}))
+    assert data is None and "reply not understood" in error
+
+    cfg.ai.provider = "nowhere"
+    assert ai.ask_json("s", "u", cfg, {})[0] is None
+
+
+def test_review_adds_the_resume_summary_to_the_profile(cfg):
+    job = make_jobs(1)[0]
+    seen = []
+
+    def post(url, json, headers, timeout):
+        seen.append(json["messages"][1]["content"])
+        return reply([{"id": job.uid, "score": 7, "level": "entry", "reason": "ok"}])
+
+    ai.review([job], cfg, {"AI_API_KEY": "k"}, post=post, sleep=lambda s: None, profile_extra="Final-year EEE student; PLC and Python")
+    assert "Summary of the seeker's resume:\nFinal-year EEE student; PLC and Python" in seen[0]
+    ai.review([job], cfg, {"AI_API_KEY": "k"}, post=post, sleep=lambda s: None)
+    assert "resume" not in seen[1]
+
+
+def test_smart_models_are_used_for_hard_tasks_and_fast_ones_for_scoring(cfg):
+    _, fast = ai.endpoint(cfg, {})
+    _, smart = ai.endpoint(cfg, {}, smart=True)
+    assert fast[0] == "gemini-flash-latest" and smart[0] == "gemini-pro-latest"
+    cfg.ai.smart_models = ["my-best-model"]
+    assert ai.endpoint(cfg, {}, smart=True)[1] == ["my-best-model"] and ai.endpoint(cfg, {})[1] == fast
+    cfg.ai.smart_models, cfg.ai.models = [], ["only-model"]
+    assert ai.endpoint(cfg, {"AI_BASE_URL": "https://x/v1"}, smart=True)[1] == ["only-model"]  # your own endpoint, your model
+    cfg.ai.provider = "groq"
+    cfg.ai.models = []
+    assert ai.endpoint(cfg, {}, smart=True)[1][0] == "openai/gpt-oss-120b"
+
+
+def test_pro_without_free_quota_falls_back_without_waiting(cfg):
+    waits, used = [], []
+    no_quota = FakeResp(429, text='{"error": {"message": "Quota exceeded for metric generate_content_free_tier_requests, limit: 0, model: gemini-pro"}}')
+
+    def post(url, json, headers, timeout):
+        used.append(json["model"])
+        return no_quota if json["model"] == "gemini-pro-latest" else FakeResp(body={"choices": [{"message": {"content": '{"ok": true}'}}]})
+
+    data, model, error = ai.ask_json("s", "u", cfg, {"AI_API_KEY": "k"}, post=post, sleep=waits.append)
+    assert data == {"ok": True} and model == "gemini-3.8-flash" and waits == []  # no 60 s wait for a quota that is zero
+    assert used == ["gemini-pro-latest", "gemini-3.8-flash"]
+
+    # an ordinary rate limit on one model (after its retry) also moves on rather than giving up
+    used.clear()
+    limited = FakeResp(429, text="slow down", headers={"retry-after": "1"})
+    data, model, _ = ai.ask_json("s", "u", cfg, {"AI_API_KEY": "k"}, sleep=waits.append, post=lambda url, json, headers, timeout:
+                                 used.append(json["model"]) or (limited if json["model"] == "gemini-pro-latest" else
+                                 FakeResp(body={"choices": [{"message": {"content": '{"ok": 1}'}}]})))
+    assert data == {"ok": 1} and used == ["gemini-pro-latest", "gemini-pro-latest", "gemini-3.8-flash"]

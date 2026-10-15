@@ -9,7 +9,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import ai, notifiers, postings, stats, suggestions
+from . import ai, coach, notifiers, postings, stats, suggestions
 from .history import History
 from .config import GROUP_BY, ORDER_BY, Config, ConfigError, load_config
 from .filters import select_jobs
@@ -51,6 +51,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--order-by", choices=list(ORDER_BY), help="how to sort jobs in the message")
     p.add_argument("--group-by", choices=list(GROUP_BY), help="how to group jobs in the message")
     p.add_argument("--no-ai", action="store_true", help="skip the AI review step this run")
+    p.add_argument("--career", action="store_true",
+                   help="only refresh the career report (resume analysis, skill gaps, portfolio ideas), then exit")
     p.add_argument("--no-read", action="store_true",
                    help="don't open the job adverts themselves (posters, PDFs) this run")
     p.add_argument("--list", action="store_true", help="show sub-fields, levels and sources, then exit")
@@ -139,6 +141,25 @@ def dashboard_url(env: dict[str, str]) -> str | None:
     return f"https://{owner}.github.io/{repo}/" if owner and repo else None
 
 
+def run_career(cfg: Config, args: argparse.Namespace) -> int:
+    """`--career`: rebuild the career report from the saved resume and history; no scraping, no e-mail."""
+    env = dict(os.environ)
+    if args.no_ai:
+        env.update(AI_API_KEY="", AI_BASE_URL="")
+    today = datetime.now(SRI_LANKA_TZ).date()
+    history = History.open(Path(args.state).parent, env)
+    if not history.enabled:
+        log.error("%s", history.note)
+        return 1
+    report = coach.run(cfg, env, history, today, save=not args.dry_run)
+    if report is None:
+        log.error("No resume saved yet – paste or upload one on the dashboard's Coach tab, then run this again.")
+        return 1
+    for note in report["notes"]:
+        log.info("%s", note)
+    return 0
+
+
 def _redact(text: str, env: dict[str, str]) -> str:
     for key in ("TELEGRAM_BOT_TOKEN", "SMTP_PASSWORD", "AI_API_KEY", "DASHBOARD_PASSWORD"):
         if env.get(key):
@@ -162,6 +183,8 @@ def run(argv: list[str] | None = None) -> int:
     if args.list:
         print_options(cfg)
         return 0
+    if args.career:
+        return run_career(cfg, args)
 
     log.info("Sub-fields: %s", ", ".join(s.key for s in cfg.enabled_subfields) or "(none)")
     log.info("Levels:     %s%s", ", ".join(lv.key for lv in cfg.enabled_levels) or "(none)",
@@ -193,20 +216,21 @@ def run(argv: list[str] | None = None) -> int:
 
     new = matched if args.all else [j for j in matched if store.is_new(j)]
     log.info("%d jobs scanned, %d match your filters, %d new", len(all_jobs), len(matched), len(new))
+    history = History.open(data_dir, env)  # encrypted with DASHBOARD_PASSWORD; empty without it
+    history.import_legacy(data_dir, cfg)
+    if history.note:
+        log.info("%s", history.note)
+
     shown, ai_note, outcome = new, None, None
     if cfg.ai.enabled and not args.no_ai:
         if env.get("AI_API_KEY") or env.get("AI_BASE_URL"):
-            outcome = ai.review(new, cfg, env)
+            outcome = ai.review(new, cfg, env, profile_extra=coach.digest_for_review(history, cfg))
             ai_note = outcome.summary
             shown = [j for j in new if not ai.is_hidden(j, cfg)]
             log.info("%s", ai_note)
         else:
             log.info("AI review is on but AI_API_KEY isn't set – skipping it")
 
-    history = History.open(data_dir, env)  # encrypted with DASHBOARD_PASSWORD; empty without it
-    history.import_legacy(data_dir, cfg)
-    if history.note:
-        log.info("%s", history.note)
     record = stats.run_record(today, results, all_jobs, matched, new, shown, cfg, outcome, read_stats)
     runs = history.runs + [record]
     tips = suggestions.generate(runs, cfg, today)
@@ -255,6 +279,11 @@ def run(argv: list[str] | None = None) -> int:
         history.suggestions = tips
         history.add_jobs(today, new, {j.uid for j in new} - {j.uid for j in shown}, cfg)
         history.save()
+        if history.enabled and coach.weekly_due(cfg, today):  # never lets the coach break the daily run
+            try:
+                coach.run(cfg, {**env, **({"AI_API_KEY": "", "AI_BASE_URL": ""} if args.no_ai else {})}, history, today)
+            except Exception as exc:
+                log.warning("Career coach failed: %s", _redact(str(exc), env)[:200])
 
     if not delivered or all_sources_failed:
         return 1

@@ -157,7 +157,7 @@ def test_ai_hidden_jobs_are_not_sent_but_remembered(fake_env, monkeypatch):
                       encoding="utf-8")
     monkeypatch.setenv("AI_API_KEY", "k")
 
-    def fake_review(jobs, cfg, env):
+    def fake_review(jobs, cfg, env, **kw):
         for j in jobs:
             j.ai_score, j.ai_reason = 2, "not a fit"
         return jobot_main.ai.ReviewResult(model="m", scored=len(jobs), hidden=len(jobs))
@@ -314,3 +314,67 @@ def test_dashboard_link_in_messages(cfg):
     assert 'href="https://mij001.github.io/jobot/"' in report.email_html()
     assert 'href="https://mij001.github.io/jobot/"' in "\n".join(report.telegram_messages())
     assert "github.io" not in Report([make_job(1)], [], cfg, date(2026, 10, 12)).email_text()
+
+
+def _set_config(config, **sections):
+    raw = yaml.safe_load(config.read_text(encoding="utf-8"))
+    for key, values in sections.items():
+        raw.setdefault(key, {}).update(values)
+    config.write_text(yaml.safe_dump(raw, sort_keys=False, allow_unicode=True), encoding="utf-8")
+
+
+def _save_resume(state, text="BSc in EEE. Skills: Python, PLC, AutoCAD"):
+    from jobot.vault import Vault
+    folder = state.parent / "history"
+    vault = Vault(folder, PASSWORD)
+    vault.write("resume", {"kind": "text", "name": "pasted text", "updated": "2026-10-14", "text": text})
+    vault.save_meta(["resume"])
+
+
+def test_career_flag_builds_the_report_without_fetching_jobs(fake_env, monkeypatch):
+    config, state, sent = fake_env
+    monkeypatch.setenv("DASHBOARD_PASSWORD", PASSWORD)
+    monkeypatch.delenv("AI_API_KEY", raising=False)
+    args = ["--config", str(config), "--state", str(state), "--career"]
+    assert jobot_main.run(args) == 1  # no resume yet: says so
+    _save_resume(state)
+    assert jobot_main.run([*args, "--dry-run"]) == 0 and "career" not in open_history(state).meta.get("shards", [])
+    assert jobot_main.run(args) == 0
+    report = open_history(state).read("career")
+    assert report["resume_skills"] == ["Python", "AutoCAD", "PLC"] and not report["ai"] and sent == []  # nothing was sent
+    monkeypatch.delenv("DASHBOARD_PASSWORD")
+    assert jobot_main.run(args) == 1  # needs the password
+
+
+def test_daily_run_refreshes_the_career_report_and_uses_its_digest(fake_env, monkeypatch):
+    config, state, sent = fake_env
+    monkeypatch.setenv("DASHBOARD_PASSWORD", PASSWORD)
+    _set_config(config, coach={"weekly_report": "daily"}, ai={"enabled": True, "min_score": 1})
+    monkeypatch.setenv("AI_API_KEY", "k")
+    _save_resume(state)
+    seen = []
+
+    def fake_review(jobs, cfg, env, **kw):
+        seen.append(kw.get("profile_extra", ""))
+        for j in jobs:
+            j.ai_score, j.ai_reason = 8, "fits"
+        return jobot_main.ai.ReviewResult(model="m", scored=len(jobs), hidden=0)
+
+    monkeypatch.setattr(jobot_main.ai, "review", fake_review)
+    monkeypatch.setattr(jobot_main.coach.ai, "ask_json", lambda *a, **k: (None, None, "offline"))
+    args = ["--config", str(config), "--state", str(state)]
+    jobot_main.run(args)
+    assert seen == [""]  # no report existed yet when the first review ran
+    report = open_history(state).read("career")
+    assert report["digest"].startswith("Skills shown on the resume: Python") and any("unavailable" in n for n in report["notes"])
+    state_file = json.loads(state.read_text())
+    state_file["ids"].clear(); state_file["fingerprints"].clear()
+    state.write_text(json.dumps(state_file))  # make the job "new" again
+    jobot_main.run(args)
+    assert seen[1].startswith("Skills shown on the resume: Python")  # the next day's review sees the digest
+
+    # --no-ai keeps the coach from calling the AI too
+    calls = []
+    monkeypatch.setattr(jobot_main.coach.ai, "ask_json", lambda *a, **k: calls.append(1) or (None, None, "x"))
+    jobot_main.run([*args, "--no-ai"])
+    assert calls == []

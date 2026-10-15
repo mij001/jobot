@@ -844,7 +844,13 @@ ai:
   enabled: true
   provider: gemini
   # Models to try, in order (blank = good free defaults for the provider).
+  # These score the day's jobs, so they should be fast.
   models: []
+  # Stronger models for the hard tasks – the career coach (resume analysis,
+  # portfolio projects, tailoring tips). Blank = the provider's best free ones
+  # (Gemini: gemini-pro-latest first, then the best Flash if Pro isn't free on
+  # your key). The report on the dashboard names the model that answered.
+  smart_models: []
   profile: |
     Electrical & Electronic Engineering (EEE) degree holder (BSc) in Sri Lanka
     looking for degree-level engineering jobs in power, electronics, automation, telecom and related
@@ -855,7 +861,34 @@ ai:
   requests_per_minute: 8 # stay under the free-tier limit
 
 # ===========================================================================
-#  7. NOTIFICATIONS
+#  7. CAREER COACH (optional, free – needs the AI key and your resume)
+#  Upload your resume on the dashboard's Coach tab (it is stored encrypted).
+#  Once a week jobot then reads it against the adverts it has collected and
+#  writes a report: how the resume reads, the skills employers ask for that it
+#  doesn't show, portfolio projects that would close those gaps, and how well
+#  each open job fits your resume. You can also press "Analyse" on the Coach
+#  tab at any time.
+#  Privacy: your name, e-mail, phone number and links are removed before any
+#  text is sent to the AI. Google's free Gemini tier may use what it receives
+#  to improve its products – set `send_resume: false` (or use another provider)
+#  if you don't want your resume's content to leave GitHub.
+# ===========================================================================
+coach:
+  enabled: true
+  # When the report is refreshed automatically: monday … sunday, daily, or off.
+  weekly_report: sunday
+  # How many days of adverts the skill-demand numbers cover.
+  window_days: 90
+  # How many portfolio project ideas to suggest.
+  projects: 4
+  # Skills of your own to look for in adverts and in your resume.
+  extra_skills: []
+  # false = the resume text is never sent to the AI; you still get skill
+  # demand, gaps and per-job resume matching (those are computed here).
+  send_resume: true
+
+# ===========================================================================
+#  8. NOTIFICATIONS
 #  Channels turn on automatically when their secrets are set
 #  (see README: TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID, and/or SMTP_* + EMAIL_TO).
 # ===========================================================================

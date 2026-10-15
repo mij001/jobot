@@ -85,10 +85,22 @@ class PostingsConfig:
 
 
 @dataclass
+class CoachConfig:
+    """The career coach: resume analysis, skill gaps, portfolio projects, resume matching."""
+    enabled: bool = True
+    weekly_report: str = "sunday"  # weekday name, "daily" or "off": when the report is refreshed
+    window_days: int = 90  # how far back the adverts used for skill demand go
+    projects: int = 4  # portfolio project ideas per report
+    extra_skills: list[str] = field(default_factory=list)  # more skills to look for in adverts
+    send_resume: bool = True  # false: the resume text never goes to the AI (counts only)
+
+
+@dataclass
 class AIConfig:
     enabled: bool = False
     provider: str = "gemini"
-    models: list[str] = field(default_factory=list)
+    models: list[str] = field(default_factory=list)  # fast models: scoring the daily jobs
+    smart_models: list[str] = field(default_factory=list)  # stronger models: career coach, harder tasks
     profile: str = ""
     min_score: int = 4
     batch_size: int = 20
@@ -118,6 +130,7 @@ class Config:
     weekly_summary: str = "monday"  # weekday name, or "off"
     top_picks_score: int = 8  # AI score that makes a job a "top pick" (0 = off)
     ai: AIConfig = field(default_factory=AIConfig)
+    coach: CoachConfig = field(default_factory=CoachConfig)
 
     @property
     def enabled_subfields(self) -> list[Subfield]:
@@ -258,6 +271,7 @@ def parse_config(raw: dict[str, Any]) -> Config:
         weekly_summary=_choice(notify.get("weekly_summary", "monday"), WEEKLY, "notify.weekly_summary"),
         top_picks_score=int(notify.get("top_picks_score", 8) or 0),
         ai=_parse_ai(raw.get("ai") or {}),
+        coach=_parse_coach(raw.get("coach") or {}),
     )
 
 
@@ -281,6 +295,19 @@ def _parse_postings(body: dict[str, Any]) -> PostingsConfig:
     )
 
 
+def _parse_coach(body: dict[str, Any]) -> CoachConfig:
+    if not isinstance(body, dict):
+        raise ConfigError("coach must be a mapping")
+    return CoachConfig(
+        enabled=bool(body.get("enabled", True)),
+        weekly_report=_choice(body.get("weekly_report", "sunday"), WEEKLY, "coach.weekly_report"),
+        window_days=max(7, _opt_int(body.get("window_days", 90), "coach.window_days") or 90),
+        projects=min(8, max(1, _opt_int(body.get("projects", 4), "coach.projects") or 4)),
+        extra_skills=_str_list(body.get("extra_skills"), "coach.extra_skills"),
+        send_resume=bool(body.get("send_resume", True)),
+    )
+
+
 def _parse_ai(body: dict[str, Any]) -> AIConfig:
     if not isinstance(body, dict):
         raise ConfigError("ai must be a mapping")
@@ -288,6 +315,7 @@ def _parse_ai(body: dict[str, Any]) -> AIConfig:
         enabled=bool(body.get("enabled", False)),
         provider=str(body.get("provider") or "gemini").strip().lower(),
         models=_str_list(body.get("models"), "ai.models"),
+        smart_models=_str_list(body.get("smart_models"), "ai.smart_models"),
         profile=str(body.get("profile") or ""),
         min_score=_opt_int(body.get("min_score", 4), "ai.min_score") or 0,
         batch_size=_opt_int(body.get("batch_size"), "ai.batch_size") or 20,

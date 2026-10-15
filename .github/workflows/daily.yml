@@ -23,6 +23,10 @@ on:
         description: "Only these qualifications, comma-separated (blank = use config.yaml). e.g. degree,diploma"
         required: false
         default: ""
+      career:
+        description: "Only refresh the career report (resume analysis, skill gaps, project ideas) - no jobs are fetched or sent"
+        type: boolean
+        default: false
       dry_run:
         description: "Only print results in the log; don't notify or remember"
         type: boolean
@@ -75,6 +79,7 @@ jobs:
           IN_LEVELS: ${{ inputs.levels }}
           IN_QUALIFICATIONS: ${{ inputs.qualifications }}
           IN_RESEND_ALL: ${{ inputs.resend_all }}
+          IN_CAREER: ${{ inputs.career }}
           IN_DRY_RUN: ${{ inputs.dry_run }}
         run: |
           args=()
@@ -82,6 +87,7 @@ jobs:
           [ -n "$IN_LEVELS" ] && args+=(--levels "$IN_LEVELS")
           [ -n "$IN_QUALIFICATIONS" ] && args+=(--qualifications "$IN_QUALIFICATIONS")
           [ "$IN_RESEND_ALL" = "true" ] && args+=(--all)
+          [ "$IN_CAREER" = "true" ] && args+=(--career)
           [ "$IN_DRY_RUN" = "true" ] && args+=(--dry-run)
           python -m jobot "${args[@]}"
 

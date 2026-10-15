@@ -122,3 +122,28 @@ def test_without_a_password_nothing_is_kept(tmp_path, cfg):
     h.add_run({"date": "2026-10-15"})
     h.save()
     assert not (tmp_path / "history").exists()
+
+
+def test_entries_record_the_skills_an_advert_mentions(cfg):
+    j = job("Controls Engineer", description="Experience with PLC, SCADA and MATLAB; AutoCAD an advantage. Valid driving licence.")
+    entry = history.job_entry(j, TODAY, False, cfg)
+    assert entry["skills"] == ["MATLAB / Simulink", "AutoCAD", "PLC", "SCADA / HMI", "Driving licence"]
+    cfg.coach.extra_skills = ["Ignition Edge"]
+    j.description += " Ignition Edge gateways."
+    assert history.job_entry(j, TODAY, False, cfg)["skills"][-1] == "Ignition Edge"
+    assert "skills" not in history.job_entry(job("Chef"), TODAY, False, cfg)  # nothing found -> not stored
+
+
+def test_shard_list_has_no_duplicates_and_keeps_other_files(tmp_path, cfg, fast_vault):
+    for _ in range(2):  # a second save used to list "stats" twice
+        h = history.History.open(tmp_path, {"DASHBOARD_PASSWORD": PASSWORD})
+        h.add_jobs(TODAY, [job("Electrical Engineer")], set(), cfg)
+        h.save()
+    h = history.History.open(tmp_path, {"DASHBOARD_PASSWORD": PASSWORD})
+    h.write_named("career", {"x": 1})
+    shards = json.loads((tmp_path / "history" / "vault.json").read_text())["shards"]
+    assert shards == ["career", "jobs-2026-10", "stats"]
+    h.save()  # saving the history later must not drop the report from the list
+    assert json.loads((tmp_path / "history" / "vault.json").read_text())["shards"] == shards
+    assert [e["title"] for e in h.entries(date(2026, 10, 1))] == ["Electrical Engineer"]
+    assert h.entries(date(2026, 11, 1)) == []
