@@ -244,3 +244,35 @@ def test_the_new_boards_are_read_and_unsure_jobs_are_kept_for_the_ai(cfg):
     assert by["Analog Designer"].remote_rule == "open"  # Remote OK: an empty place means no restriction
     assert http.warnings == ["Nope: unknown job board type 'icims'"]
     assert ("https://remoteok.com/api", {"tag": "hardware"}) in http.requested
+
+
+def test_nodesk_feed_with_html_entities_still_parses(cfg):
+    class Feed(FakeBoards):
+        def get(self, url, params=None, **kw):
+            return FakeResp(text="""<?xml version="1.0"?><rss version="2.0"><channel><item><title>PCB Designer at Iota</title>
+              <link>https://nodesk.co/remote-jobs/iota/</link><description>Boards that don&rsquo;t fail&nbsp;ever &amp; more</description></item></channel></rss>""")
+
+    (job,) = remote.nodesk(Feed(), {})
+    assert job.title == "PCB Designer" and job.company == "Iota" and "don\u2019t fail" in job.description and "& more" in job.description
+
+
+def test_hn_hiring_prefers_the_algolia_api(cfg):
+    class Algolia(FakeBoards):
+        def get(self, url, params=None, **kw):
+            self.requested.append((url, dict(params or {})))
+            if "hnrss" in url:
+                raise AssertionError("the fallback must not be needed")
+            if "story,author_whoishiring" in (params or {}).get("tags", ""):
+                return FakeResp({"hits": [{"objectID": "9", "title": "Ask HN: Who wants to be hired? (October 2026)"},
+                                          {"objectID": "7", "title": "Ask HN: Who is hiring? (October 2026)"}]})
+            return FakeResp({"hits": [
+                {"objectID": "71", "parent_id": 7, "created_at": "2026-10-14T10:00:00Z",
+                 "comment_text": "Epsilon | Firmware Engineer | REMOTE (Global) | Full-time<p>We make sensors"},
+                {"objectID": "72", "parent_id": 71, "created_at": "2026-10-14T11:00:00Z",
+                 "comment_text": "Reply | not an advert | REMOTE"},
+                {"objectID": "73", "parent_id": 7, "created_at": "2026-10-14T12:00:00Z", "comment_text": "A question about remote work"}]})
+
+    http = Algolia()
+    (job,) = remote.hn_hiring(http, {})
+    assert (job.title, job.company, job.posted, job.url) == ("Firmware Engineer", "Epsilon", "2026-10-14", "https://news.ycombinator.com/item?id=71")
+    assert any(p.get("tags") == "comment,story_7" for _, p in http.requested)  # the "hired?" thread was not used

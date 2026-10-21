@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import html
+import logging
 import re
 import xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
@@ -28,6 +29,8 @@ from ..config import Config
 from ..http import Http
 from ..models import Job
 from ..swarm import gather
+
+log = logging.getLogger(__name__)
 
 NAME = "Remote jobs"
 
@@ -162,7 +165,7 @@ def remoteok(conn: Http, opts: dict) -> list[Job]:
 
 
 def weworkremotely(conn: Http, opts: dict) -> list[Job]:
-    root = ET.fromstring(conn.get("https://weworkremotely.com/remote-jobs.rss").text)
+    root = _xml(conn.get("https://weworkremotely.com/remote-jobs.rss").text)
     out = []
     for it in root.iter("item"):
         region = (it.findtext("region") or "").strip()
@@ -231,9 +234,20 @@ def workingnomads(conn: Http, opts: dict) -> list[Job]:
     return out
 
 
+_XML_ENTITIES = {"amp", "lt", "gt", "quot", "apos"}
+
+
+def _xml(text: str) -> ET.Element:
+    """Parse a feed, tolerating HTML entities (&rsquo; &nbsp; …) that plain XML doesn't define."""
+    def fix(m: re.Match) -> str:
+        return m.group(0) if m.group(1) in _XML_ENTITIES else html.unescape(m.group(0))
+
+    return ET.fromstring(re.sub(r"&([A-Za-z][A-Za-z0-9]*);", fix, text))
+
+
 def jobspresso(conn: Http, opts: dict) -> list[Job]:
     """Jobspresso's job feed: the "creator" line reads "Company<br>⚲ Where"."""
-    root = ET.fromstring(conn.get("https://jobspresso.co/", params={"feed": "job_feed"}).text)
+    root = _xml(conn.get("https://jobspresso.co/", params={"feed": "job_feed"}).text)
     out = []
     for it in root.iter("item"):
         creator = it.findtext("{http://purl.org/dc/elements/1.1/}creator") or ""
@@ -252,7 +266,7 @@ def jobspresso(conn: Http, opts: dict) -> list[Job]:
 
 def nodesk(conn: Http, opts: dict) -> list[Job]:
     """NoDesk's feed names no place ("Title at Company"), so what it lists is judged by the AI."""
-    root = ET.fromstring(conn.get("https://nodesk.co/remote-jobs/index.xml").text)
+    root = _xml(conn.get("https://nodesk.co/remote-jobs/index.xml").text)
     out = []
     for it in root.iter("item"):
         title, _, company = _plain(it.findtext("title")).rpartition(" at ")
@@ -267,30 +281,55 @@ _HN_ROLE = re.compile(r"engineer|developer|designer|architect|scientist|manager|
                       r"administrator|consultant|programmer|intern", re.I)
 
 
-def hn_hiring(conn: Http, opts: dict) -> list[Job]:
-    """Hacker News "Who is hiring?": every comment is an advert that starts "Company | Role | Place | REMOTE …"."""
-    root = ET.fromstring(conn.get("https://hnrss.org/whoishiring/jobs", params={"count": int(opts.get("hn_count", 100))}).text)
+def _hn_advert(link: str, raw: str, posted: str) -> Job | None:
+    """One "Who is hiring?" comment, which starts "Company | Role | Place | REMOTE …"; None if it isn't a remote advert."""
+    paras = [p for p in re.split(r"<p>|<br\s*/?>", html.unescape(raw)) if _plain(p)]
+    if not paras:
+        return None
+    header = _plain(paras[0], 300)
+    parts = [p.strip() for p in header.split("|")]
+    if len(parts) < 3 or not re.search(r"\bremote\b", header, re.I):
+        return None  # not an advert, or not remote
+    role = next((p for p in parts[1:] if _HN_ROLE.search(p)), parts[1])
+    where = " | ".join(p for p in parts[1:] if p is not role)
+    return _job("HN Who is hiring", link, role, link, parts[0], where, description=_plain(" ".join(paras[1:]), 700), posted=posted)
+
+
+def _hn_comments(conn: Http, count: int) -> list[tuple[str, str, str]]:
+    """(link, comment HTML, date) of the newest "Who is hiring?" thread's top-level comments, from the Algolia HN API."""
+    base = "https://hn.algolia.com/api/v1/search_by_date"
+    stories = conn.get(base, params={"tags": "story,author_whoishiring", "hitsPerPage": 6}).json().get("hits") or []
+    story = next((h for h in stories if str(h.get("title", "")).lower().startswith("ask hn: who is hiring")), None)
+    if story is None:
+        return []
+    hits = conn.get(base, params={"tags": f"comment,story_{story['objectID']}", "query": "remote",
+                                  "hitsPerPage": min(1000, count * 4)}).json().get("hits") or []
+    return [(f"https://news.ycombinator.com/item?id={h['objectID']}", h.get("comment_text") or "", str(h.get("created_at") or "")[:10])
+            for h in hits if str(h.get("parent_id")) == str(story["objectID"])][:count]
+
+
+def _hn_feed(conn: Http, count: int) -> list[tuple[str, str, str]]:
+    """The same from hnrss.org (a fallback: its server sometimes refuses GitHub's)."""
+    root = ET.fromstring(conn.get("https://hnrss.org/whoishiring/jobs", params={"count": count}).text)
     out = []
     for it in root.iter("item"):
-        raw = html.unescape(it.findtext("description") or "")
-        paras = [p for p in re.split(r"<p>|<br\s*/?>", raw) if _plain(p)]
-        if not paras:
-            continue
-        header = _plain(paras[0], 300)
-        parts = [p.strip() for p in header.split("|")]
-        if len(parts) < 3 or not re.search(r"\bremote\b", header, re.I):
-            continue  # not an advert, or not remote
-        role = next((p for p in parts[1:] if _HN_ROLE.search(p)), parts[1])
-        where = " | ".join(p for p in parts[1:] if p is not role)
-        j = _job("HN Who is hiring", it.findtext("link"), role, it.findtext("link") or "", parts[0], where,
-                 description=_plain(" ".join(paras[1:]), 700), posted=_iso(it.findtext("pubDate")))
-        if j:
-            try:
-                j.posted = parsedate_to_datetime(it.findtext("pubDate") or "").date().isoformat()
-            except (TypeError, ValueError):
-                pass
-            out.append(j)
+        try:
+            posted = parsedate_to_datetime(it.findtext("pubDate") or "").date().isoformat()
+        except (TypeError, ValueError):
+            posted = ""
+        out.append((it.findtext("link") or "", it.findtext("description") or "", posted))
     return out
+
+
+def hn_hiring(conn: Http, opts: dict) -> list[Job]:
+    """Hacker News "Who is hiring?": every top-level comment of the month's thread is an advert."""
+    count = int(opts.get("hn_count", 100))
+    try:
+        comments = _hn_comments(conn, count)
+    except Exception as exc:  # Algolia down or changed: try the RSS mirror before giving up
+        log.info("HN Who is hiring: Algolia failed (%s), trying hnrss.org", type(exc).__name__)
+        comments = _hn_feed(conn, count)
+    return [j for link, raw, posted in comments if (j := _hn_advert(link, raw, posted))]
 
 
 def boards(conn: Http, opts: dict) -> list[Job]:

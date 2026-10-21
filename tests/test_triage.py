@@ -275,6 +275,19 @@ def test_known_layouts_never_reach_the_ai(cfg, tmp_path):
     assert [j.title for j in jobs] == ["Electrical Engineer"]
 
 
+def test_jobs_you_already_applied_for_are_not_new_vacancies():
+    msg = EmailMessage()
+    msg["From"], msg["Subject"] = "LinkedIn <jobs-noreply@linkedin.com>", "Your application was viewed"
+    msg.set_content("x")
+    msg.add_alternative(
+        '<table><tr><td><a href="https://www.linkedin.com/comm/jobs/view/4480404741?trk=eml-email_jobs_job_application_viewed_01-applied_jobs-0">'
+        'Electrical Engineering Intern</a><br>BPPL Holdings PLC Applied on Oct 20</td></tr></table>'
+        '<table><tr><td><a href="https://www.linkedin.com/comm/jobs/view/4479965615?trk=eml-email_job_alert_digest_01">Electrical Engineer</a>'
+        '<br>Samsung C&amp;T</td></tr></table>', subtype="html")
+    jobs = mailbox.parse_message(msg.as_bytes(), ["linkedin.com"])
+    assert [j.title for j in jobs] == ["Electrical Engineer"]
+
+
 def test_alert_without_ai_budget_or_key_is_left_for_later(cfg, tmp_path):
     h = make_helpers(cfg, tmp_path, FakeAI(), env={})
     assert mailbox.parse_message(alert_mail(), ["weirdboard.lk"], extract=h.extract_alert) == []

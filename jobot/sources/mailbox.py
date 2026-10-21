@@ -49,6 +49,11 @@ _NOISE = re.compile(
     r"more|read more|search|jobs?)$", re.I)
 
 
+# "Your application was viewed" / "Applied on Oct 20" mails are about jobs you already applied for, not new ones.
+_APPLIED_LINK = re.compile(r"application_viewed|job_application|applied_job|application_status|application_sent", re.I)
+_APPLIED_TEXT = re.compile(r"\bapplied on\b|\byou applied\b|application (?:was )?(?:viewed|sent|submitted|status)|\byour application\b", re.I)
+
+
 def missing(env: dict[str, str]) -> str | None:
     if not (env.get("IMAP_USERNAME") or env.get("SMTP_USERNAME")) or not (env.get("IMAP_PASSWORD") or env.get("SMTP_PASSWORD")):
         return "needs IMAP_USERNAME and IMAP_PASSWORD (or the SMTP_ ones) secrets"
@@ -112,6 +117,8 @@ def parse_message(raw: bytes, sender_domains: list[str], extract=None) -> list[J
         seen.add(ident)
         # a card usually reads "Title / Company · Location": take what follows the link as company and place
         around = " ".join((a.find_parent(["td", "div", "li"]) or a).get_text(" ", strip=True).split())
+        if _APPLIED_LINK.search(href) or _APPLIED_TEXT.search(around[:300]):
+            continue  # a job you already applied for
         extra = around.replace(text, "", 1).strip(" -–·|,")[:100]
         jobs.append(Job(source=label, source_id=ident, title=text, url=href, company=extra, posted=day))
     if not jobs and extract is not None:
