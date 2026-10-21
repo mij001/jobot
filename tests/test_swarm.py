@@ -469,3 +469,15 @@ def test_remote_jobs_are_not_opened_for_their_advert(cfg):
                      subfields=["electronics"])
     local = Job(source="topjobs.lk", source_id="2", title="Hardware Engineer", url="https://topjobs.lk/x", subfields=["electronics"])
     assert postings.pick([remote_job, local], [remote_job, local], lambda j: True, cfg) == [local]
+
+
+def test_ocr_runs_one_thread_per_process(monkeypatch):
+    from jobot import ocr
+    seen = {}
+
+    def fake_run(cmd, **kw):
+        seen.update(kw["env"])
+        return type("R", (), {"stdout": b"text"})()
+
+    monkeypatch.setattr(ocr.subprocess, "run", fake_run)
+    assert ocr._run(["tesseract", "x"]) == "text" and seen["OMP_THREAD_LIMIT"] == "1"

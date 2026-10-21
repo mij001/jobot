@@ -10,6 +10,7 @@ aren't installed these functions just return "" and jobot carries on.
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import subprocess
 import tempfile
@@ -25,7 +26,10 @@ def available() -> bool:
 
 def _run(cmd: list[str]) -> str:
     try:
-        out = subprocess.run(cmd, capture_output=True, timeout=TIMEOUT, check=False)
+        # One thread per OCR process: Tesseract otherwise grabs every core for each image, and several
+        # adverts read side by side (postings.workers) then just slow each other down.
+        out = subprocess.run(cmd, capture_output=True, timeout=TIMEOUT, check=False,
+                             env={**os.environ, "OMP_THREAD_LIMIT": "1"})
         return out.stdout.decode("utf-8", "replace")
     except (OSError, subprocess.TimeoutExpired) as exc:
         log.debug("%s failed: %s", cmd[0], exc)

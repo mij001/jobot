@@ -6,7 +6,7 @@ on:
     # scheduled runs late when it is busy, and each run reads every open listing, so a late
     # run loses nothing. The first run after `schedule.digest_hour` (config.yaml) sends the
     # daily summary; the runs in between only message you when they find new jobs.
-    - cron: "45 2 * * *"  # TEMPORARY until the frequent schedule is proven: 13,43 * * * *
+    - cron: "13,43 * * * *"
   workflow_dispatch:
     inputs:
       subfields:

@@ -1036,7 +1036,7 @@ postings:
   # `workers` at a time (reading a poster with OCR takes ~15 s) and never for longer
   # than `max_seconds` in all, so a run stays quick even right after new sites were added.
   max_per_run: 60
-  workers: 3
+  workers: 4
   max_seconds: 240
   # Read the text out of poster images with OCR.
   read_posters: true
