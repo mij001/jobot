@@ -10,6 +10,7 @@ from bs4 import BeautifulSoup
 from ..config import Config
 from ..http import Http
 from ..models import Job
+from ..swarm import gather
 
 NAME = "topjobs.lk"
 BASE = "https://www.topjobs.lk"
@@ -59,9 +60,12 @@ def parse(html: str, category: str = "") -> list[Job]:
 
 
 def fetch(http: Http, opts: dict, cfg: Config) -> list[Job]:
-    jobs: list[Job] = []
-    for code in opts.get("categories") or ["MAE"]:
-        resp = http.get(LIST_URL.format(code=code))
+    """Every functional area is a big page (hundreds of KB), so a few are read side by side; an area
+    that times out is noted as a warning and the others still count."""
+    def one(conn: Http, code: str) -> list[Job]:
+        resp = conn.get(LIST_URL.format(code=code))
         resp.encoding = "utf-8"  # header says ISO-8859-1, the page itself is UTF-8
-        jobs.extend(parse(resp.text, category=f"topjobs:{code}"))
-    return jobs
+        return parse(resp.text, category=f"topjobs:{code}")
+
+    return gather(http, opts.get("categories") or ["MAE"], one, workers=int(opts.get("workers", 3)),
+                  label=lambda code: f"area {code}")

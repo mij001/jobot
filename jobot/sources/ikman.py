@@ -7,6 +7,7 @@ import json
 from ..config import Config
 from ..http import Http
 from ..models import Job
+from ..swarm import gather
 
 NAME = "ikman.lk"
 LIST_URL = "https://ikman.lk/en/ads/sri-lanka/{category}"
@@ -51,15 +52,28 @@ def parse(html: str, category: str = "") -> tuple[list[Job], int]:
 
 
 def fetch(http: Http, opts: dict, cfg: Config) -> list[Job]:
+    """Job categories (a page at a time, newest first) plus keyword searches across *all* job ads – a
+    search finds ads that were filed under the wrong category."""
     max_pages = int(opts.get("max_pages", 4))
-    jobs: list[Job] = []
-    for category in opts.get("categories") or ["engineer-jobs"]:
-        page = 1
-        while page <= max_pages:
-            html = http.get(LIST_URL.format(category=category), params={"page": page}).text
-            batch, total_pages = parse(html, category)
+    searches = [("category", c) for c in (opts.get("categories") or ["engineer-jobs"])]
+    searches += [("query", q) for q in (opts.get("queries") or [])]
+    search_pages = int(opts.get("query_pages", 2))
+
+    def one(conn: Http, search: tuple[str, str]) -> list[Job]:
+        kind, value = search
+        limit = search_pages if kind == "query" else max_pages
+        jobs: list[Job] = []
+        for page in range(1, limit + 1):
+            params = {"page": page}
+            if kind == "query":
+                params["query"] = value
+            html = conn.get(LIST_URL.format(category="jobs" if kind == "query" else value), params=params).text
+            batch, total_pages = parse(html, value)
             jobs.extend(batch)
             if page >= total_pages:
                 break
-            page += 1
-    return jobs
+        return jobs
+
+    found = gather(http, searches, one, workers=int(opts.get("workers", 3)),
+                   label=lambda s: f"search {s[1]!r}" if s[0] == "query" else s[1])
+    return list({j.source_id: j for j in found}.values())  # the same ad turns up in several searches

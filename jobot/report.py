@@ -19,6 +19,7 @@ class SourceResult:
     fetched: int = 0
     error: str | None = None
     skipped: str | None = None  # reason the site was deliberately not checked
+    warnings: list[str] = field(default_factory=list)  # parts of the site that failed while the rest worked
 
 
 @dataclass
@@ -35,6 +36,7 @@ class Report:
     history_note: str | None = None  # why no history is being kept, if so
     dashboard_url: str | None = None  # the page with your history and shortlist
     reminders: list[dict] = field(default_factory=list)  # shortlisted jobs closing soon
+    at: str | None = None  # time of day, for a quick (between-digests) run: "14:30"
 
     # -- shared helpers ---------------------------------------------------
 
@@ -68,7 +70,7 @@ class Report:
     @property
     def title(self) -> str:
         n = len(self.jobs)
-        when = self.day.strftime("%d %b %Y")
+        when = self.day.strftime("%d %b %Y") + (f", {self.at}" if self.at else "")
         if not n:
             return f"No new EEE jobs today ({when})"
         return f"{n} new EEE job{'s' if n != 1 else ''} in Sri Lanka – {when}"
@@ -80,6 +82,8 @@ class Report:
                 lines.append(f"{s.name}: skipped ({s.skipped})")
             elif s.error:
                 lines.append(f"{s.name}: failed ({s.error})")
+            elif s.warnings:
+                lines.append(f"{s.name}: {s.fetched} scanned (partly failed: {'; '.join(s.warnings[:2])})")
             else:
                 lines.append(f"{s.name}: {s.fetched} scanned")
         return lines

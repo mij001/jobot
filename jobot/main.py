@@ -10,15 +10,21 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import time
+
+import requests
+
 from . import ai, coach, notifiers, postings, stats, suggestions
 from .history import History
 from .config import GROUP_BY, ORDER_BY, Config, ConfigError, load_config
 from .filters import select_jobs
-from .http import Http
+from .http import Http, SourceTimeout
 from .models import Job
 from .report import Report, SourceResult
+from .schedule import Schedule
 from .sources import SOURCES
 from .storage import SeenStore
+from .swarm import parallel_map
 
 ROOT = Path(__file__).resolve().parent.parent
 SRI_LANKA_TZ = timezone(timedelta(hours=5, minutes=30))
@@ -56,6 +62,12 @@ def build_parser() -> argparse.ArgumentParser:
                    help="only refresh the career report (resume analysis, skill gaps, portfolio ideas), then exit")
     p.add_argument("--prepare", metavar="JOB_ID",
                    help="cover letter, resume bullets, interview questions and a study plan for one job, then exit")
+    p.add_argument("--probe", nargs="?", const=str(ROOT / "candidates.txt"), metavar="FILE",
+                   help="try the addresses in FILE (default candidates.txt) from this machine and report which "
+                        "sites answer and hold vacancy links, then exit")
+    p.add_argument("--auto", action="store_true",
+                   help="scheduled run: the first run after schedule.digest_hour of the day sends the daily summary, "
+                        "the runs in between only message you when they find new jobs")
     p.add_argument("--no-read", action="store_true",
                    help="don't open the job adverts themselves (posters, PDFs) this run")
     p.add_argument("--list", action="store_true", help="show sub-fields, levels and sources, then exit")
@@ -100,33 +112,70 @@ def print_options(cfg: Config) -> None:
         print(f"  {mark(opts.get('enabled', True))} {key:<18} {name}")
 
 
-def scrape(cfg: Config, env: dict[str, str] | None = None) -> tuple[list[Job], list[SourceResult]]:
+def scrape(cfg: Config, env: dict[str, str] | None = None, schedule: Schedule | None = None,
+           now: datetime | None = None, full: bool = True) -> tuple[list[Job], list[SourceResult]]:
+    """Read every enabled site, all of them at the same time. A site that timed out or errored is asked
+    once more at the end. Sites with `every_hours` are skipped on quick runs until they are due again."""
     env = dict(os.environ if env is None else env)
-    on_github = env.get("GITHUB_ACTIONS") == "true"
-    jobs: list[Job] = []
+    blocked_here = env.get("GITHUB_ACTIONS") == "true" and not env.get("JOBOT_ALLOW_BLOCKED")
+    now = now or datetime.now(SRI_LANKA_TZ)
+    plan: list[tuple[str, dict, object, SourceResult]] = []
     results: list[SourceResult] = []
     for key, opts in cfg.enabled_sources().items():
-        module = SOURCES.get(key)
+        module = SOURCES.get(str(opts.get("type") or key))  # `type:` lets one site have several instances
         if module is None:
             log.warning("Unknown source %r in config – skipped", key)
             continue
-        result = SourceResult(name=module.NAME)
+        if not full and schedule is not None and opts.get("every_hours") and \
+                not schedule.source_due(key, float(opts["every_hours"]), now):
+            continue  # a slow or touchy site that was read recently
+        result = SourceResult(name=str(opts.get("name") or module.NAME))
         results.append(result)
-        if on_github and opts.get("skip_on_github_actions"):
+        if blocked_here and opts.get("skip_on_github_actions"):
             result.skipped = "it blocks GitHub's servers"
-            log.info("%-12s skipped: it blocks GitHub's servers", module.NAME)
+            log.info("%-14s skipped: it blocks GitHub's servers", result.name)
             continue
-        http = Http(delay=float(opts.get("delay_seconds", 1.0)))
-        try:
-            found = module.fetch(http, opts, cfg)
-            result.fetched = len(found)
-            jobs.extend(found)
-            log.info("%-12s %4d jobs scanned", module.NAME, len(found))
-        except Exception as exc:  # one broken site must not stop the others
-            result.error = _short_error(exc)
-            log.warning("%-12s FAILED: %s", module.NAME, result.error)
-            log.debug("details", exc_info=True)
+        plan.append((key, opts, module, result))
+
+    def work(item) -> tuple[list[Job], list[str]]:
+        key, opts, module, result = item
+        started = time.monotonic()
+        http = Http(delay=float(opts.get("delay_seconds", 1.0)), deadline=started + cfg.schedule.site_seconds)
+        found = module.fetch(http, opts, cfg)
+        log.info("%-14s %4d jobs scanned in %3.0fs%s", result.name, len(found), time.monotonic() - started,
+                 f"  (partly failed: {'; '.join(http.warnings[:3])})" if http.warnings else "")
+        return found, list(http.warnings)
+
+    outcomes = parallel_map(work, plan, workers=cfg.schedule.workers)
+    again = [i for i, (_, err) in enumerate(outcomes) if err is not None and cfg.schedule.retry_failed and _transient(err)]
+    if again:
+        log.info("Asking %d site(s) that failed once more: %s", len(again), ", ".join(plan[i][3].name for i in again))
+        for i, outcome in zip(again, parallel_map(work, [plan[i] for i in again], workers=cfg.schedule.workers), strict=True):
+            outcomes[i] = outcome
+
+    jobs: list[Job] = []
+    for (key, opts, _module, result), (done, err) in zip(plan, outcomes, strict=True):
+        if err is not None:
+            result.error = _short_error(err)
+            log.warning("%-14s FAILED: %s", result.name, result.error)
+            log.debug("details", exc_info=err)
+            continue
+        found, warnings = done
+        result.fetched, result.warnings = len(found), warnings
+        jobs.extend(found)
+        if schedule is not None and opts.get("every_hours"):
+            schedule.mark_source(key, now)
     return jobs, results
+
+
+def _transient(exc: Exception) -> bool:
+    """Worth asking again: a timeout, a dropped connection or a 5xx – not a refusal or a rate limit."""
+    if isinstance(exc, SourceTimeout):
+        return False  # it already used its time
+    resp = getattr(exc, "response", None)
+    if resp is not None and getattr(resp, "status_code", None):
+        return resp.status_code >= 500
+    return isinstance(exc, (requests.Timeout, requests.ConnectionError, TimeoutError))
 
 
 def _short_error(exc: Exception) -> str:
@@ -196,6 +245,10 @@ def run(argv: list[str] | None = None) -> int:
     if args.list:
         print_options(cfg)
         return 0
+    if args.probe:
+        from . import probe
+        probe.run(args.probe)
+        return 0
     if args.career:
         return run_career(cfg, args)
     if args.prepare:
@@ -209,10 +262,18 @@ def run(argv: list[str] | None = None) -> int:
                  " + not stated" if cfg.include_unknown_qualification else "")
 
     env = dict(os.environ)
-    today = datetime.now(SRI_LANKA_TZ).date()
+    now = datetime.now(SRI_LANKA_TZ)
+    today = now.date()
     data_dir = Path(args.state).parent
+    schedule = Schedule(data_dir / "schedule.json")
+    # A scheduled run is either the day's first (the "digest": summary, reminders, "nothing new" notice) or a
+    # quick check in between that only messages you when it finds something and skips slow sites.
+    quick = args.auto and not schedule.digest_due(now, cfg.schedule.digest_hour)
+    if args.auto:
+        log.info("%s", "Quick check (the daily summary is sent by the first run after %02d:00)" % cfg.schedule.digest_hour
+                 if quick else "Daily run")
 
-    all_jobs, results = scrape(cfg)
+    all_jobs, results = scrape(cfg, env, schedule, now, full=not quick)
     matched = select_jobs(all_jobs, cfg)
     store = SeenStore(args.state)
 
@@ -247,17 +308,17 @@ def run(argv: list[str] | None = None) -> int:
             log.info("AI review is on but AI_API_KEY isn't set – skipping it")
 
     record = stats.run_record(today, results, all_jobs, matched, new, shown, cfg, outcome, read_stats)
-    runs = history.runs + [record]
+    runs = history.merged_runs(record)
     tips = suggestions.generate(runs, cfg, today)
-    weekly_day = cfg.weekly_summary in ("daily", today.strftime("%A").lower())
-    reminders = coach.closing_soon(history, today)
+    weekly_day = not quick and cfg.weekly_summary in ("daily", today.strftime("%A").lower())
+    reminders = [] if quick else coach.closing_soon(history, today)
     stats_line = f"{len(all_jobs)} jobs scanned · {len(matched)} open matches · {len(new)} new · {len(shown)} sent"
     report = Report(
         jobs=shown, sources=results, cfg=cfg, day=today, ai_note=ai_note, stats_line=stats_line,
         read_note=read_stats.summary if read_stats else None,
         history_note=history.note if weekly_day else None, dashboard_url=dashboard_url(env),
         weekly=(stats.week_summary(runs, cfg, today) + coach.weekly_lines(history, cfg)) if weekly_day else [],
-        reminders=reminders,
+        reminders=reminders, at=now.strftime("%H:%M") if quick else None,
         tips=[t["text"] for t in tips if t["kind"] != "insight"][:3] if weekly_day else [],
     )
     checked = [r for r in results if not r.skipped]
@@ -276,7 +337,7 @@ def run(argv: list[str] | None = None) -> int:
         return 1 if all_sources_failed else 0
 
     delivered = False
-    if shown or cfg.send_when_empty or reminders:
+    if shown or (not quick and (cfg.send_when_empty or reminders)):
         for name, channel in channels.items():
             try:
                 channel.send(report, env)
@@ -292,12 +353,19 @@ def run(argv: list[str] | None = None) -> int:
             store.add(job, today)
         store.prune(cfg.remember_days, today)
         store.save()
-        history.add_run(record)
-        history.suggestions = tips
-        history.add_jobs(today, new, {j.uid for j in new} - {j.uid for j in shown}, cfg)
-        history.backfill_skills(cfg)
-        history.save()
-        if history.enabled and coach.weekly_due(cfg, today):  # never lets the coach break the daily run
+        if not quick:
+            schedule.mark_digest(now)
+        schedule.save()
+        # Quiet quick runs change nothing, so they commit nothing: the history is only rewritten when there are
+        # new jobs, or a site's status differs from what the day's record already says.
+        previous = history.runs[-1] if history.runs and history.runs[-1].get("date") == record["date"] else None
+        if not quick or new or previous is None or stats.status_signature(previous) != stats.status_signature(record):
+            history.add_run(record)
+            history.suggestions = tips
+            history.add_jobs(today, new, {j.uid for j in new} - {j.uid for j in shown}, cfg)
+            history.backfill_skills(cfg)
+            history.save()
+        if not quick and history.enabled and coach.weekly_due(cfg, today):  # never lets the coach break the daily run
             try:
                 coach.run(cfg, {**env, **({"AI_API_KEY": "", "AI_BASE_URL": ""} if args.no_ai else {})}, history, today)
             except Exception as exc:

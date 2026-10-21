@@ -19,6 +19,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from . import stats
 from .config import Config
 from .filters import matching_keywords
 from .models import Job
@@ -117,8 +118,15 @@ class History:
 
     # -- adding ---------------------------------------------------------------
 
+    def merged_runs(self, record: dict) -> list[dict]:
+        """The run list as it will be once `record` is added: one record per day, so a day with
+        many runs counts as one day (see stats.merge_runs)."""
+        if self.runs and self.runs[-1].get("date") == record.get("date"):
+            return [*self.runs[:-1], stats.merge_runs(self.runs[-1], record)]
+        return (self.runs + [record])[-MAX_RUNS:]
+
     def add_run(self, record: dict) -> None:
-        self.runs = (self.runs + [record])[-MAX_RUNS:]
+        self.runs = self.merged_runs(record)
 
     def add_jobs(self, day: date, jobs: list[Job], hidden_uids: set[str], cfg: Config) -> None:
         if not self.enabled:

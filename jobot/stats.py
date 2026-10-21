@@ -47,7 +47,8 @@ def run_record(day: date, sources: list[SourceResult], scanned: list[Job], match
     record = {
         "date": day.isoformat(),
         "sources": {
-            r.name: ({"skipped": r.skipped} if r.skipped else {"error": r.error} if r.error else {"scanned": r.fetched})
+            r.name: ({"skipped": r.skipped} if r.skipped else {"error": r.error} if r.error else
+                     {"scanned": r.fetched, **({"partial": r.warnings[:3]} if r.warnings else {})})
             for r in sources
         },
         "scanned": len(scanned),
@@ -68,6 +69,62 @@ def run_record(day: date, sources: list[SourceResult], scanned: list[Job], match
     if ai_result is not None:
         record["ai"] = {"checked": ai_result.scored, "hidden": ai_result.hidden, "error": ai_result.error}
     return record
+
+
+def _source_state(st: dict | None) -> str:
+    return "none" if not st else "ok" if "scanned" in st else "error" if "error" in st else "skipped"
+
+
+def status_signature(record: dict) -> dict[str, str]:
+    """Which sites worked / failed / were skipped (not how many jobs they had)."""
+    return {name: _source_state(st) for name, st in (record.get("sources") or {}).items()}
+
+
+def _merge_sources(old: dict, new: dict) -> dict:
+    """A site counts as read for the day if any run read it; then failed; then skipped."""
+    rank = {"ok": 3, "error": 2, "skipped": 1, "none": 0}
+    out = {}
+    for name in {**old, **new}:
+        a, b = old.get(name), new.get(name)
+        if rank[_source_state(b)] >= rank[_source_state(a)]:
+            out[name] = dict(b) if b else dict(a)
+        else:
+            out[name] = dict(a)
+        if "scanned" in out[name]:  # keep the bigger count: a run can be cut short
+            out[name]["scanned"] = max(x.get("scanned", 0) for x in (a, b) if x and "scanned" in x)
+        if any(x and x.get("partial") for x in (a, b)) and "scanned" in out[name] and not (b and "scanned" in b and not b.get("partial")):
+            out[name]["partial"] = (b or a).get("partial")
+        elif "partial" in out[name] and b and "scanned" in b and not b.get("partial"):
+            del out[name]["partial"]  # the latest run read all of it
+    return out
+
+
+def merge_runs(old: dict, new: dict) -> dict:
+    """Fold another run of the same day into the day's record (the dashboard and the suggestions
+    think in days): what was found adds up, "what is open right now" comes from the fuller run, and
+    each site shows its best result of the day."""
+    snapshot = new if new.get("scanned", 0) >= old.get("scanned", 0) else old
+    out = dict(snapshot)
+    out["date"] = new["date"]
+    out["runs"] = int(old.get("runs", 1)) + 1
+    for key in ("new", "sent"):
+        out[key] = old.get(key, 0) + new.get(key, 0)
+    for key in ("new_by_subfield", "new_by_level", "new_by_qualification", "new_by_site"):
+        total = Counter(old.get(key) or {})
+        total.update(new.get(key) or {})
+        out[key] = dict(total)
+    out["scanned"] = max(old.get("scanned", 0), new.get("scanned", 0))
+    out["matched"] = max(old.get("matched", 0), new.get("matched", 0))
+    out["sources"] = _merge_sources(old.get("sources") or {}, new.get("sources") or {})
+    posts = [p for p in (old.get("postings"), new.get("postings")) if p]
+    if posts:
+        out["postings"] = {k: sum(p.get(k, 0) for p in posts) for k in posts[-1]}
+        out["postings"]["left"] = posts[-1].get("left", 0)
+    ais = [a for a in (old.get("ai"), new.get("ai")) if a]
+    if ais:
+        out["ai"] = {"checked": sum(a.get("checked", 0) for a in ais), "hidden": sum(a.get("hidden", 0) for a in ais),
+                     "error": ais[-1].get("error")}
+    return out
 
 
 def week_summary(runs: list[dict], cfg: Config, today: date, days: int = 7) -> list[str]:

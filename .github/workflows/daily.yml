@@ -2,9 +2,11 @@ name: Daily EEE job hunt
 
 on:
   schedule:
-    # 02:45 UTC = 08:15 Sri Lanka time, every day. GitHub may start
-    # scheduled runs a little late when it is busy.
-    - cron: "45 2 * * *"
+    # Every 30 minutes (at :13 and :43, away from the busy top of the hour). GitHub may start
+    # scheduled runs late when it is busy, and each run reads every open listing, so a late
+    # run loses nothing. The first run after `schedule.digest_hour` (config.yaml) sends the
+    # daily summary; the runs in between only message you when they find new jobs.
+    - cron: "45 2 * * *"  # TEMPORARY until the frequent schedule is proven: 13,43 * * * *
   workflow_dispatch:
     inputs:
       subfields:
@@ -31,6 +33,10 @@ on:
         description: "Only prepare for one job: its id (shown on the dashboard) - cover letter, bullets, interview questions, study plan"
         required: false
         default: ""
+      probe:
+        description: "Only try the sites listed in candidates.txt from GitHub's servers and print which ones work - nothing is fetched for jobs or sent"
+        type: boolean
+        default: false
       dry_run:
         description: "Only print results in the log; don't notify or remember"
         type: boolean
@@ -46,7 +52,7 @@ concurrency:
 jobs:
   hunt:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -86,6 +92,8 @@ jobs:
           IN_CAREER: ${{ inputs.career }}
           IN_PREPARE: ${{ inputs.prepare }}
           IN_DRY_RUN: ${{ inputs.dry_run }}
+          IN_PROBE: ${{ inputs.probe }}
+          EVENT: ${{ github.event_name }}
         run: |
           args=()
           [ -n "$IN_SUBFIELDS" ] && args+=(--subfields "$IN_SUBFIELDS")
@@ -95,6 +103,8 @@ jobs:
           [ "$IN_CAREER" = "true" ] && args+=(--career)
           [ -n "$IN_PREPARE" ] && args+=(--prepare "$IN_PREPARE")
           [ "$IN_DRY_RUN" = "true" ] && args+=(--dry-run)
+          [ "$IN_PROBE" = "true" ] && args+=(--probe)
+          [ "$EVENT" = "schedule" ] && args+=(--auto)
           python -m jobot "${args[@]}"
 
       - name: Remember sent jobs

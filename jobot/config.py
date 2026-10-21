@@ -85,6 +85,15 @@ class PostingsConfig:
 
 
 @dataclass
+class ScheduleConfig:
+    """How the frequent runs behave (how OFTEN they start is the cron line in .github/workflows/daily.yml)."""
+    digest_hour: int = 8  # the first run after this hour (Sri Lanka time) sends the daily summary
+    workers: int = 6  # job sites read at the same time
+    site_seconds: int = 240  # a site that hasn't finished by then is given up on for this run
+    retry_failed: bool = True  # ask a site that timed out or errored once more before giving up
+
+
+@dataclass
 class CoachConfig:
     """The career coach: resume analysis, skill gaps, portfolio projects, resume matching."""
     enabled: bool = True
@@ -133,6 +142,7 @@ class Config:
     top_picks_score: int = 8  # AI score that makes a job a "top pick" (0 = off)
     ai: AIConfig = field(default_factory=AIConfig)
     coach: CoachConfig = field(default_factory=CoachConfig)
+    schedule: ScheduleConfig = field(default_factory=ScheduleConfig)
 
     @property
     def enabled_subfields(self) -> list[Subfield]:
@@ -276,6 +286,7 @@ def parse_config(raw: dict[str, Any]) -> Config:
         top_picks_score=int(notify.get("top_picks_score", 8) or 0),
         ai=_parse_ai(raw.get("ai") or {}),
         coach=_parse_coach(raw.get("coach") or {}),
+        schedule=_parse_schedule(raw.get("schedule") or {}),
     )
 
 
@@ -296,6 +307,18 @@ def _parse_postings(body: dict[str, Any]) -> PostingsConfig:
         ai_vision=bool(body.get("ai_vision", True)),
         max_ai_reads=_opt_int(body.get("max_ai_reads", 5), "postings.max_ai_reads") or 0,
         skip_titles=_str_list(body.get("skip_titles"), "postings.skip_titles"),
+    )
+
+
+def _parse_schedule(body: dict[str, Any]) -> ScheduleConfig:
+    if not isinstance(body, dict):
+        raise ConfigError("schedule must be a mapping")
+    hour = _opt_int(body.get("digest_hour", 8), "schedule.digest_hour")
+    return ScheduleConfig(
+        digest_hour=8 if hour is None else min(23, max(0, hour)),
+        workers=min(16, max(1, _opt_int(body.get("workers", 6), "schedule.workers") or 6)),
+        site_seconds=min(1200, max(30, _opt_int(body.get("site_seconds", 240), "schedule.site_seconds") or 240)),
+        retry_failed=bool(body.get("retry_failed", True)),
     )
 
 

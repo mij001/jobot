@@ -154,12 +154,12 @@ def _job_payload(job: Job) -> dict:
 
 
 def _ask(url: str, model: str, key: str, messages: list[dict], post, sleep, temperature: float = 0.1,
-         last: bool = True) -> str:
+         last: bool = True, timeout: float = 120) -> str:
     """One chat call. `last` = no other model to fall back on, so a rate limit is worth waiting out."""
     body = {"model": model, "messages": messages, "temperature": temperature}
     headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
     for attempt in range(2):
-        resp = post(url, json=body, headers=headers, timeout=120)
+        resp = post(url, json=body, headers=headers, timeout=timeout)
         if resp.status_code == 429 and re.search(r"limit:\s*0\b|PerDay|per day", resp.text, re.I):
             _NO_QUOTA.add(model)  # none (or no more today) on this key: waiting won't help
             raise _ModelGone(f"{model}: out of free quota ({_error_text(resp)})")
@@ -323,7 +323,7 @@ def _review(jobs, cfg, env, post, sleep, profile_extra="") -> ReviewResult:
         reply, last_problem = None, ""
         while models and reply is None:
             try:
-                reply = _ask(url, models[0], key, messages, post, sleep, last=len(models) == 1)
+                reply = _ask(url, models[0], key, messages, post, sleep, last=len(models) == 1, timeout=60)
                 result.model = models[0]
             except _ModelGone as exc:
                 log.warning("AI model unavailable, trying the next one: %s", exc)

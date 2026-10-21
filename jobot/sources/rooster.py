@@ -7,6 +7,7 @@ import re
 from ..config import Config
 from ..http import Http
 from ..models import Job
+from ..swarm import gather
 
 NAME = "Rooster"
 API = "https://api.rooster.jobs/jobSearch/jobs/search"
@@ -46,8 +47,9 @@ def to_job(item: dict) -> Job:
 def fetch(http: Http, opts: dict, cfg: Config) -> list[Job]:
     max_pages = int(opts.get("max_pages", 3))
     country = opts.get("country") or "Sri Lanka"
-    jobs: dict[str, Job] = {}
-    for query in opts.get("queries") or ["electrical"]:
+
+    def one(conn: Http, query: str) -> list[Job]:
+        jobs: list[Job] = []
         for page in range(1, max_pages + 1):
             body = {
                 "query": [query],
@@ -55,10 +57,13 @@ def fetch(http: Http, opts: dict, cfg: Config) -> list[Job]:
                 "page": page,
                 "filters": {"country": country},
             }
-            data = (http.post(API, json=body).json() or {}).get("body") or {}
+            data = (conn.post(API, json=body).json() or {}).get("body") or {}
             items = data.get("data") or []
-            for item in items:
-                jobs.setdefault(str(item["id"]), to_job(item))
+            jobs.extend(to_job(item) for item in items)
             if page * PAGE_SIZE >= (data.get("count") or 0) or not items:
                 break
-    return list(jobs.values())
+        return jobs
+
+    found = gather(http, opts.get("queries") or ["electrical"], one, workers=int(opts.get("workers", 3)),
+                   label=lambda q: f"search {q!r}")
+    return list({j.source_id: j for j in found}.values())  # the same job matches several searches

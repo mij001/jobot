@@ -200,7 +200,8 @@ def test_run_keeps_encrypted_history(fake_env, monkeypatch):
     assert "Embedded Engineer" not in "".join(p.read_text() for p in folder.iterdir())  # nothing readable
     vault = open_history(state)
     stats = vault.read("stats")
-    assert [r["new"] for r in stats["runs"]] == [1, 0]
+    assert [r["new"] for r in stats["runs"]] == [1]  # two runs on the same day are one record for that day
+    assert stats["runs"][0]["runs"] == 2
     assert stats["runs"][0]["sources"]["BrokenSite"]["error"].startswith("RuntimeError")
     assert isinstance(stats["suggestions"], list)
     [shard] = [n for n in vault.meta["shards"] if n.startswith("jobs-")]
