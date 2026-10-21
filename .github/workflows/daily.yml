@@ -33,6 +33,10 @@ on:
         description: "Only prepare for one job: its id (shown on the dashboard) - cover letter, bullets, interview questions, study plan"
         required: false
         default: ""
+      auto:
+        description: "Behave like a scheduled run: the first run after the digest hour sends the daily summary, the ones in between only message you about new jobs"
+        type: boolean
+        default: false
       probe:
         description: "Only try the sites listed in candidates.txt from GitHub's servers and print which ones work - nothing is fetched for jobs or sent"
         type: boolean
@@ -100,6 +104,7 @@ jobs:
           IN_CAREER: ${{ inputs.career }}
           IN_PREPARE: ${{ inputs.prepare }}
           IN_DRY_RUN: ${{ inputs.dry_run }}
+          IN_AUTO: ${{ inputs.auto }}
           IN_PROBE: ${{ inputs.probe }}
           IN_PROBE_FILE: ${{ inputs.probe_file }}
           EVENT: ${{ github.event_name }}
@@ -113,7 +118,7 @@ jobs:
           [ -n "$IN_PREPARE" ] && args+=(--prepare "$IN_PREPARE")
           [ "$IN_DRY_RUN" = "true" ] && args+=(--dry-run)
           [ "$IN_PROBE" = "true" ] && args+=(--probe "${IN_PROBE_FILE:-candidates.txt}")
-          [ "$EVENT" = "schedule" ] && args+=(--auto)
+          [ "$EVENT" = "schedule" ] || [ "$IN_AUTO" = "true" ] && args+=(--auto)
           python -m jobot "${args[@]}"
 
       - name: Remember sent jobs
