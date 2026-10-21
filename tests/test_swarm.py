@@ -390,3 +390,21 @@ def test_near_misses_say_what_your_settings_dropped(cfg):
         [(j.source_id) for j, _ in missed] == ["1", "2"]
     assert all(j.title != "Chef" and j.source_id != "3" for j, _ in missed) and len(missed) == 2
     assert stats.near_misses(jobs, cfg, limit=1)[0][0].source_id == "1"  # newest first
+
+
+def test_quick_runs_ask_for_fewer_pages(cfg, monkeypatch):
+    seen = []
+
+    class Pages:
+        NAME = "Pages"
+
+        @staticmethod
+        def fetch(http, opts, cfg):
+            seen.append((opts.get("max_pages"), opts.get("query_pages")))
+            return []
+
+    monkeypatch.setattr(jobot_main, "SOURCES", {"p": Pages})
+    cfg.sources = {"p": {"max_pages": 4, "quick_pages": 1, "query_pages": 2, "quick_query_pages": 1}, "q": {"type": "p", "max_pages": 3}}
+    jobot_main.scrape(cfg, {}, full=True)
+    jobot_main.scrape(cfg, {}, full=False)
+    assert seen == [(4, 2), (3, None), (1, 1), (3, None)]  # a site without quick_pages keeps its setting

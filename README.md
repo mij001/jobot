@@ -1,12 +1,14 @@
 # jobot – Sri Lankan EEE job hunter 🔌
 
-Every morning jobot checks Sri Lankan job sites for **Electrical & Electronic
-Engineering** vacancies and sends the new ones to your **Telegram** and/or
-**e-mail**. It runs for free on GitHub Actions, so you don't need a server.
+jobot checks Sri Lankan job sites – **every 30 minutes** – for **Electrical &
+Electronic Engineering** vacancies, plus **fully remote jobs you can do from
+Sri Lanka**, and sends the new ones to your **Telegram** and/or **e-mail**
+the moment they appear. It runs for free on GitHub Actions, so you don't need
+a server.
 
 | Site | How it's read |
 |---|---|
-| [topjobs.lk](https://www.topjobs.lk) | engineering, telecom, R&D, manufacturing … categories |
+| [topjobs.lk](https://www.topjobs.lk) | 16 functional areas: engineering, telecom, R&D, manufacturing – and the ones EEE work hides in (building services, marine/airline, education, technical sales, medical) |
 | [XpressJobs](https://xpress.jobs) | Electronics/Electrical, Engineering, Telecom … sectors (+ the site's career level). **Blocks GitHub's servers**, so the daily run skips it – see [below](#xpressjobs) |
 | [ikman.lk](https://ikman.lk/en/ads/sri-lanka/jobs) | engineer, technician, internship, IT jobs |
 | [Rooster](https://rooster.jobs) | keyword searches limited to Sri Lanka |
@@ -17,7 +19,9 @@ Engineering** vacancies and sends the new ones to your **Telegram** and/or
 | [FindMyJob.lk](https://findmyjob.lk) | its jobs RSS feed |
 | [Gazette.lk](https://www.gazette.lk) + any RSS feed | government job notices; add more feeds in the settings |
 | Company careers pages | [CEB](https://www.ceb.lk/careers/en), [SLT-Mobitel](https://careers.slt.lk/) – add any employer's page |
-| [LinkedIn](https://www.linkedin.com/jobs) | public job search for Sri Lanka, last 7 days (partly rate-limited) |
+| [LinkedIn](https://www.linkedin.com/jobs) | public job search for Sri Lanka, last 7 days (partly rate-limited), plus its "remote" filter |
+| University vacancy pages | Moratuwa, Colombo, Jaffna & Peradeniya engineering faculties, Sri Jayewardenepura, Open University and more – lecturer, instructor, technical-officer posts |
+| Remote job boards | [Remote OK](https://remoteok.com), [We Work Remotely](https://weworkremotely.com), [Jobicy](https://jobicy.com), [Himalayas](https://himalayas.app), [Working Nomads](https://www.workingnomads.com), [Remotive](https://remotive.com) – only jobs open to Sri Lanka, see [below](#fully-remote-jobs) |
 
 jobot **opens each new advert and reads it** – including the many Sri
 Lankan adverts that are only a **poster image** (read with free OCR) or a
@@ -177,14 +181,23 @@ Without the secret nothing is saved to the repository, because it is public.
 1. Open the **Actions** tab and enable workflows if GitHub asks.
 2. Pick **Daily EEE job hunt → Run workflow** to try it right away.
 
-After that it runs **every day at about 8:15 AM Sri Lanka time**. The first
-run sends every matching job that's currently open; from then on you get
-only new ones. On days with nothing new you get a short "No new EEE jobs
-today" message, so you know it ran (turn this off with
-`notify.send_when_empty: false`).
+After that it runs **every 30 minutes** (see [How often, and how hard](#how-often-and-how-hard)).
+The first run sends every matching job that's currently open; from then on you
+get only new ones, as soon as they are found. The first run after 8 AM Sri
+Lanka time each day is the **daily run**: it also sends the summary (and, on
+days with nothing new, a short "No new EEE jobs today" message, so you know it
+ran – turn this off with `notify.send_when_empty: false`). The runs in between
+only message you when they find something.
 
 > The schedule only runs from the repository's **default branch**, so make
-> sure these files are on it.
+> sure these files are on it. GitHub starts scheduled runs when it has room,
+> which can be tens of minutes late – every run reads **all** open listings, so
+> a late or skipped run loses nothing.
+>
+> **Free minutes:** runs are free on a *public* repository (this one). On a
+> private repository GitHub gives 2 000 free minutes a month, which a 30-minute
+> schedule would use up – change the `cron:` line in
+> `.github/workflows/daily.yml` to something like `"13 */3 * * *"` there.
 
 ---
 
@@ -455,6 +468,90 @@ or `daily` / `off`) adds the "Your week" block and suggestions, and
 `notify.top_picks_score` (default 8, `0` = off) sets the AI score for
 ⭐ Top picks.
 
+### How often, and how hard
+
+* **Every 30 minutes.** The workflow's `cron: "13,43 * * * *"` line sets this.
+  Change it there if you want it less (or more) often.
+* **All sites at once.** The sites are read at the same time (`schedule.workers`,
+  6 by default), and inside a site several categories or searches are read side
+  by side – never more than a few connections per site, and always with the
+  site's usual pause between requests. A whole run takes about a minute or two
+  instead of seven. A part of a site that times out is shown as a warning
+  ("partly failed") instead of losing the whole site, and a site that fails is
+  asked once more.
+* **Daily run vs quick runs.** The first run after `schedule.digest_hour` (8)
+  sends the daily summary, closing reminders and the weekly summary. The
+  runs in between only message you when there are new jobs, with the time in the
+  title, and skip a slow site until it is due again.
+* **Several entries per site.** A site can be listed more than once, each with
+  its own timetable: `type:` names the site's code, `name:` what to call it and
+  `every_hours:` how often to ask. The fast entry (for the pages that change all
+  day) runs every time; `ikman_more`, `rooster_more` and `topjobs_more` cover
+  the long tail every one to two hours, and LinkedIn – which limits anonymous
+  searches – every three.
+* **What it covers** (turn any off in the Sites card): topjobs – 16 functional
+  areas, including the ones EEE work hides in (civil/building services, airline &
+  marine, education, sales, medical); ikman – 11 job categories **plus 20
+  keyword searches across all ads**, which finds jobs filed under the wrong
+  category; Rooster – 31 searches; LinkedIn – 20 searches; ITPro.lk, TechJobs.lk,
+  LankaJobs, FindMyJob.lk, Gazette.lk; CEB and SLT-Mobitel; twelve **university
+  vacancy pages** (lecturer, instructor, technical-officer posts); and
+  [fully remote jobs](#fully-remote-jobs).
+* **What got dropped, and why.** Once a week the message lists open jobs that
+  match an EEE sub-field but were left out by **your own settings** (a switched-off
+  sub-field or level), with the reason for each (`notify.dropped_list`, 8 by
+  default, 0 = off). That is the quickest way to notice a setting that is hiding jobs.
+* **Finding more sites.** `python -m jobot --probe` (or **Actions → Run workflow →
+  probe**) tries every address in `candidates.txt` *from GitHub's own servers*
+  and reports which ones answer, are feeds, hold vacancy links, or ask robots
+  not to visit (`robots.txt`). Pages you add under `sources.company_pages.pages`
+  are only visited when their `robots.txt` allows it.
+
+### Fully remote jobs
+
+`sources.remote_jobs` reads six free remote-job boards – Remote OK, We Work
+Remotely, Jobicy, Himalayas, Working Nomads and (as its own, slower entry)
+Remotive – and `linkedin_remote` asks LinkedIn's "remote" filter for jobs listed
+in Sri Lanka. Most remote jobs are open only to people in the US or Europe, so
+every job is checked against what the employer says about where candidates may
+live: only **worldwide / anywhere / APAC / Asia / Sri Lanka** (or no restriction
+at all) are kept, and ones that ask for a time zone Sri Lanka can't meet ("must
+overlap US hours", "CET ± 3 hours", "Southeast Asia") are dropped. What is kept is
+marked 🌍 **Remote**, skips the `locations` / `include_overseas` filters, and then
+goes through your usual sub-field, level and qualification settings – so with
+sub-fields switched off you will see fewer. The dashboard's Jobs tab has a
+**Remote only** filter. Each board asks for a link back, which the job links
+give. Remote boards don't publish much EEE work (hardware, firmware, PCB, FPGA,
+IoT, network and test engineering are what turns up), and "senior" jobs are
+dropped by the default levels.
+
+### Optional extra channels
+
+These need a little set-up and are **off until you turn them on** (Sites card, or
+`enabled: true` in `config.yaml`):
+
+* **Job-alert e-mails** (`email_alerts`). XpressJobs, Observer Jobs and a few
+  others refuse GitHub's servers, but they will happily e-mail you new jobs. Subscribe
+  to their alerts, pointed at a mailbox of yours, and jobot reads those e-mails
+  over IMAP and turns the vacancy links into jobs. It is **read-only**: only
+  messages from the senders you list (`senders:`), nothing is marked read,
+  moved or deleted. Add `IMAP_USERNAME` / `IMAP_PASSWORD` secrets (or it reuses
+  `SMTP_USERNAME` / `SMTP_PASSWORD`; a Gmail app password works for both). Every
+  site formats its e-mails differently, so check the first run's log
+  ("Email alerts: N vacancy link(s) in M message(s)").
+* **Jooble** (`jooble`). A job search engine that gathers adverts from many sites.
+  Its official API is free: get a key at <https://jooble.org/api/about> and add it as
+  the `JOOBLE_API_KEY` secret.
+* **Sites that block GitHub, from your own computer.** `.github/workflows/local.yml`
+  runs only XpressJobs and Observer Jobs on a computer of yours, where they see an
+  ordinary home connection. Register your computer as a runner (repository
+  *Settings → Actions → Runners → New self-hosted runner*), then add a repository
+  **variable** `LOCAL_RUNNER` = `true` (*Settings → Secrets and variables → Actions →
+  Variables*). The workflow only ever runs on a timer or by hand, never for pull
+  requests, so nobody else's code can reach your computer through it – keep
+  *Fork pull request workflows* on "require approval". This one has not been tried on
+  a real runner yet.
+
 ### More sites
 
 * **RSS feeds**: add any job feed under `sources.rss.feeds` (WordPress job
@@ -468,8 +565,9 @@ or `daily` / `off`) adds the "Your week" block and suggestions, and
 * `locations: [Colombo, Gampaha]` sends only jobs in those places.
 * `include_overseas: false` skips Gulf, Maldives and other overseas ads,
   which Sri Lankan sites carry a lot of.
-* `sources:` turns sites on or off, picks categories/sectors, and sets LinkedIn
-  search keywords.
+* `sources:` turns sites on or off, picks categories/sectors, and sets the searches
+  (LinkedIn, ikman, Rooster, Jobicy …).
+* `schedule:` sets the hour of the daily run and how many sites are read at once.
 
 ### One-off runs with different filters
 

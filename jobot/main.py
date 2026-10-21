@@ -146,7 +146,12 @@ def scrape(cfg: Config, env: dict[str, str] | None = None, schedule: Schedule | 
         started = time.monotonic()
         http = Http(delay=float(opts.get("delay_seconds", 1.0)), timeout=(10, float(opts.get("timeout_seconds", 30))),
                     deadline=started + float(opts.get("site_seconds", cfg.schedule.site_seconds)))
-        found = module.fetch(http, {**opts, "_env": env}, cfg)
+        given = {**opts, "_env": env}
+        if not full:  # a quick check only needs the newest page of each list; the daily run reads the deep ones
+            for key_, quick_key in (("max_pages", "quick_pages"), ("query_pages", "quick_query_pages")):
+                if quick_key in opts:
+                    given[key_] = opts[quick_key]
+        found = module.fetch(http, given, cfg)
         log.info("%-14s %4d jobs scanned in %3.0fs%s", result.name, len(found), time.monotonic() - started,
                  f"  (partly failed: {'; '.join(http.warnings[:3])})" if http.warnings else "")
         return found, list(http.warnings)

@@ -699,14 +699,16 @@ sources:
     #   MAE Eng-Mech/Auto/Elec   ITT IT-Telecoms   HNS IT-Hardware/Networks
     #   RLT R&D/Science          POS Manufacturing/Operations
     #   SQC Supervision/Quality Control
-    categories: [MAE, ITT, HNS, RLT, POS, SQC]
-    # topjobs' pages are huge and slow to answer from GitHub, so they get a
-    # patient timeout and are read two at a time.
+    #   MAE Eng-Mech/Auto/Elec   ITT IT-Telecoms   HNS IT-Hardware/Networks
+    categories: [MAE, ITT, HNS]
+    # topjobs' pages are huge (hundreds of KB) and slow to answer from GitHub, so
+    # they get a patient timeout and are read two at a time.
     timeout_seconds: 90
     workers: 2
 
-  # The other topjobs areas, a few times a day. Several of them hold EEE work
-  # the six above don't:
+  # The other topjobs areas, every couple of hours. Several of them hold EEE work
+  # that the three above don't:
+  #   RLT R&D/Science   POS Manufacturing/Operations   SQC Supervision/Quality Control
   #   CCE Civil/Interior/Architecture (building services, MEP)   AIM Airline/Marine
   #   TAL Education (lecturers, instructors)   SMM Sales/Marketing (technical sales)
   #   MHN Medical (biomedical)   SDQ IT-Software/DB/QA/Web/GIS   AGD Agriculture/Environment
@@ -716,10 +718,10 @@ sources:
     name: topjobs.lk (other areas)
     enabled: true
     every_hours: 2
-    categories: [CCE, AIM, TAL, SMM, MHN, SDQ, AGD, IDV, COM, LWT]
+    categories: [RLT, POS, SQC, CCE, AIM, TAL, SMM, MHN, SDQ, AGD, IDV, COM, LWT]
     timeout_seconds: 90
     workers: 2
-    site_seconds: 480
+    site_seconds: 600
 
   xpressjobs:
     enabled: true
@@ -751,7 +753,8 @@ sources:
       - internships-and-trainees-jobs
       - it-and-network-industry-jobs
       - draftsman-jobs
-    max_pages: 4 # 25 ads per page
+    max_pages: 4 # 25 ads per page (the daily run reads all of them)
+    quick_pages: 1 # the runs in between only need the newest page of each category
 
   # More ikman job categories, every couple of hours.
   ikman_more:
@@ -759,6 +762,7 @@ sources:
     name: ikman.lk (more categories)
     enabled: true
     every_hours: 2
+    quick_pages: 1
     categories:
       - building-construction-jobs
       - factory-and-manufacturing-jobs
@@ -774,8 +778,9 @@ sources:
     type: ikman
     name: ikman.lk (searches)
     enabled: true
-    every_hours: 1
+    every_hours: 2
     categories: []
+    quick_query_pages: 1
     queries:
       - electrical engineer
       - electronic engineer
@@ -804,6 +809,7 @@ sources:
     country: Sri Lanka
     queries: [electrical, electronic, engineer, engineering, automation, embedded, telecommunication, solar, intern]
     max_pages: 3 # 100 jobs per page, per query
+    quick_pages: 1
 
   # A longer list of searches, hourly.
   rooster_more:
@@ -836,6 +842,7 @@ sources:
       - trainee engineer
       - research assistant
     max_pages: 2
+    quick_pages: 1
 
   observerjobs:
     enabled: true
@@ -849,6 +856,7 @@ sources:
     enabled: true
     # LankaJobs – government, private and foreign jobs, newest first.
     max_pages: 8 # 24 jobs per page
+    quick_pages: 2
 
   itpro:
     enabled: true
