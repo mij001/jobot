@@ -135,13 +135,17 @@ def scrape(cfg: Config, env: dict[str, str] | None = None, schedule: Schedule | 
             result.skipped = "it blocks GitHub's servers"
             log.info("%-14s skipped: it blocks GitHub's servers", result.name)
             continue
+        if (needs := getattr(module, "missing", lambda _env: None)(env)):  # e.g. a secret that isn't set
+            result.skipped = needs
+            log.info("%-14s skipped: %s", result.name, needs)
+            continue
         plan.append((key, opts, module, result))
 
     def work(item) -> tuple[list[Job], list[str]]:
         key, opts, module, result = item
         started = time.monotonic()
         http = Http(delay=float(opts.get("delay_seconds", 1.0)), deadline=started + cfg.schedule.site_seconds)
-        found = module.fetch(http, opts, cfg)
+        found = module.fetch(http, {**opts, "_env": env}, cfg)
         log.info("%-14s %4d jobs scanned in %3.0fs%s", result.name, len(found), time.monotonic() - started,
                  f"  (partly failed: {'; '.join(http.warnings[:3])})" if http.warnings else "")
         return found, list(http.warnings)
@@ -223,7 +227,7 @@ def run_prepare(cfg: Config, args: argparse.Namespace) -> int:
 
 
 def _redact(text: str, env: dict[str, str]) -> str:
-    for key in ("TELEGRAM_BOT_TOKEN", "SMTP_PASSWORD", "AI_API_KEY", "DASHBOARD_PASSWORD"):
+    for key in ("TELEGRAM_BOT_TOKEN", "SMTP_PASSWORD", "AI_API_KEY", "DASHBOARD_PASSWORD", "IMAP_PASSWORD", "JOOBLE_API_KEY"):
         if env.get(key):
             text = text.replace(env[key], "***")
     return text

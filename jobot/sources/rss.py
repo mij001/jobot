@@ -15,6 +15,7 @@ from email.utils import parsedate_to_datetime
 from ..config import Config
 from ..http import Http
 from ..models import Job
+from ..swarm import gather
 
 NAME = "RSS feeds"
 _TAGS = re.compile(r"<[^>]+>")
@@ -68,19 +69,17 @@ def parse(xml: str, site: str) -> list[Job]:
 
 
 def fetch(http: Http, opts: dict, cfg: Config) -> list[Job]:
-    jobs: list[Job] = []
-    errors = []
-    for feed in opts.get("feeds") or []:
-        name, url = feed.get("name") or "RSS", feed.get("url")
-        if not url:
-            continue
+    """Every feed (and its pages) is read, a few at a time; a feed that fails is noted and the rest still count."""
+    feeds = [f for f in opts.get("feeds") or [] if f.get("url")]
+
+    def one(conn: Http, feed: dict) -> list[Job]:
+        name, jobs = feed.get("name") or "RSS", []
         for page in range(1, int(feed.get("pages", 1)) + 1):
-            try:
-                text = http.get(url, params={"paged": page} if page > 1 else None).text
-                jobs.extend(parse(text, name))
-            except Exception as exc:  # keep the other feeds going
-                errors.append(f"{name}: {exc}")
+            text = conn.get(feed["url"], params={"paged": page} if page > 1 else None).text
+            batch = parse(text, name)
+            jobs.extend(batch)
+            if not batch:
                 break
-    if errors and not jobs:
-        raise RuntimeError("; ".join(errors))
-    return jobs
+        return jobs
+
+    return gather(http, feeds, one, workers=int(opts.get("workers", 4)), label=lambda f: f.get("name") or f["url"])

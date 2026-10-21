@@ -1,7 +1,7 @@
 """Registry of job sites. Keys match the `sources:` section of config.yaml."""
 
-from . import (company_pages, ikman, itpro, lankajobs, linkedin, observerjobs, rooster, rss, techjobs, topjobs,
-               xpressjobs)
+from . import (company_pages, ikman, itpro, jooble, lankajobs, linkedin, mailbox, observerjobs, rooster, rss, techjobs,
+               topjobs, xpressjobs)
 
 SOURCES = {
     "topjobs": topjobs,
@@ -15,4 +15,6 @@ SOURCES = {
     "rss": rss,
     "company_pages": company_pages,
     "linkedin": linkedin,
+    "email_alerts": mailbox,
+    "jooble": jooble,
 }
