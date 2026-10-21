@@ -408,3 +408,24 @@ def test_quick_runs_ask_for_fewer_pages(cfg, monkeypatch):
     jobot_main.scrape(cfg, {}, full=True)
     jobot_main.scrape(cfg, {}, full=False)
     assert seen == [(4, 2), (3, None), (1, 1), (3, None)]  # a site without quick_pages keeps its setting
+
+
+def test_a_slow_site_cannot_run_past_the_whole_run_budget(cfg, monkeypatch):
+    class Hangs:
+        NAME = "Hangs"
+
+        @staticmethod
+        def fetch(http, opts, cfg):
+            while True:  # a site that keeps asking for more pages
+                http._wait()
+
+    monkeypatch.setattr(jobot_main, "SOURCES", {"hangs": Hangs})
+    cfg.sources = {"hangs": {"delay_seconds": 0.05}}
+    cfg.schedule.run_seconds, cfg.schedule.site_seconds = 60, 1  # the site's own budget is the shorter one here
+    started = time.monotonic()
+    jobs, [result] = jobot_main.scrape(cfg, {})
+    assert time.monotonic() - started < 5 and jobs == [] and "took too long" in result.error
+    cfg.schedule.run_seconds, cfg.schedule.site_seconds = 1, 60  # and the run's budget caps a generous site budget
+    started = time.monotonic()
+    jobot_main.scrape(cfg, {})
+    assert time.monotonic() - started < 5

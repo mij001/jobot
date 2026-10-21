@@ -679,8 +679,11 @@ schedule:
   digest_hour: 8
   # Sites read at the same time.
   workers: 6
-  # A site that hasn't finished after this many seconds is given up on for this run.
+  # A site that hasn't finished after this many seconds is given up on for this run;
+  # the whole read of all sites (second chances included) is cut off after run_seconds.
   site_seconds: 240
+  run_seconds: 540
+  retry_seconds: 90
   # Ask a site that timed out or errored once more before giving up on it.
   retry_failed: true
 
@@ -703,7 +706,8 @@ sources:
     categories: [MAE, ITT, HNS]
     # topjobs' pages are huge (hundreds of KB) and slow to answer from GitHub, so
     # they get a patient timeout and are read two at a time.
-    timeout_seconds: 90
+    timeout_seconds: 60
+    retries: 0
     workers: 2
 
   # The other topjobs areas, every couple of hours. Several of them hold EEE work
@@ -719,9 +723,10 @@ sources:
     enabled: true
     every_hours: 2
     categories: [RLT, POS, SQC, CCE, AIM, TAL, SMM, MHN, SDQ, AGD, IDV, COM, LWT]
-    timeout_seconds: 90
+    timeout_seconds: 60
+    retries: 0
     workers: 2
-    site_seconds: 600
+    site_seconds: 420
 
   xpressjobs:
     enabled: true

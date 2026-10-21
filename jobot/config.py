@@ -90,6 +90,8 @@ class ScheduleConfig:
     digest_hour: int = 8  # the first run after this hour (Sri Lanka time) sends the daily summary
     workers: int = 6  # job sites read at the same time
     site_seconds: int = 240  # a site that hasn't finished by then is given up on for this run
+    run_seconds: int = 540  # the whole read of all sites (retries included) is cut off after this long
+    retry_seconds: int = 90  # the second chance given to a failed site is this long at most
     retry_failed: bool = True  # ask a site that timed out or errored once more before giving up
 
 
@@ -320,6 +322,8 @@ def _parse_schedule(body: dict[str, Any]) -> ScheduleConfig:
         digest_hour=8 if hour is None else min(23, max(0, hour)),
         workers=min(16, max(1, _opt_int(body.get("workers", 6), "schedule.workers") or 6)),
         site_seconds=min(1200, max(30, _opt_int(body.get("site_seconds", 240), "schedule.site_seconds") or 240)),
+        run_seconds=min(1500, max(60, _opt_int(body.get("run_seconds", 540), "schedule.run_seconds") or 540)),
+        retry_seconds=min(600, max(15, _opt_int(body.get("retry_seconds", 90), "schedule.retry_seconds") or 90)),
         retry_failed=bool(body.get("retry_failed", True)),
     )
 

@@ -141,11 +141,14 @@ def scrape(cfg: Config, env: dict[str, str] | None = None, schedule: Schedule | 
             continue
         plan.append((key, opts, module, result))
 
-    def work(item) -> tuple[list[Job], list[str]]:
+    run_deadline = time.monotonic() + cfg.schedule.run_seconds  # nothing is waited on past this, retries included
+
+    def work(item, budget: float | None = None) -> tuple[list[Job], list[str]]:
         key, opts, module, result = item
         started = time.monotonic()
         http = Http(delay=float(opts.get("delay_seconds", 1.0)), timeout=(10, float(opts.get("timeout_seconds", 30))),
-                    deadline=started + float(opts.get("site_seconds", cfg.schedule.site_seconds)))
+                    retries=int(opts.get("retries", 2)),
+                    deadline=min(run_deadline, started + (budget or float(opts.get("site_seconds", cfg.schedule.site_seconds)))))
         given = {**opts, "_env": env}
         if not full:  # a quick check only needs the newest page of each list; the daily run reads the deep ones
             for key_, quick_key in (("max_pages", "quick_pages"), ("query_pages", "quick_query_pages")):
@@ -158,9 +161,11 @@ def scrape(cfg: Config, env: dict[str, str] | None = None, schedule: Schedule | 
 
     outcomes = parallel_map(work, plan, workers=cfg.schedule.workers)
     again = [i for i, (_, err) in enumerate(outcomes) if err is not None and cfg.schedule.retry_failed and _transient(err)]
-    if again:
+    if again and time.monotonic() < run_deadline - 15:
         log.info("Asking %d site(s) that failed once more: %s", len(again), ", ".join(plan[i][3].name for i in again))
-        for i, outcome in zip(again, parallel_map(work, [plan[i] for i in again], workers=cfg.schedule.workers), strict=True):
+        second = parallel_map(lambda item: work(item, budget=cfg.schedule.retry_seconds), [plan[i] for i in again],
+                              workers=cfg.schedule.workers)
+        for i, outcome in zip(again, second, strict=True):
             outcomes[i] = outcome
 
     jobs: list[Job] = []
