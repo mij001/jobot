@@ -497,6 +497,11 @@ or `daily` / `off`) adds the "Your week" block and suggestions, and
   LankaJobs, FindMyJob.lk, Gazette.lk; CEB and SLT-Mobitel; twelve **university
   vacancy pages** (lecturer, instructor, technical-officer posts); and
   [fully remote jobs](#fully-remote-jobs).
+* **Adverts are read in parallel too.** Many Sri Lankan adverts are poster
+  images, which are read with OCR; `postings.workers` (4) of them are read at
+  once and `postings.max_seconds` (240) caps the time, so a run stays quick even
+  right after new sites were added – anything not read yet waits for the next run
+  (the message footer says "N left for next run").
 * **What got dropped, and why.** Once a week the message lists open jobs that
   match an EEE sub-field but were left out by **your own settings** (a switched-off
   sub-field or level), with the reason for each (`notify.dropped_list`, 8 by
@@ -573,7 +578,11 @@ These need a little set-up and are **off until you turn them on** (Sites card, o
 
 **Actions → Daily EEE job hunt → Run workflow** has boxes for this. For
 example, `levels = internship` and `resend_all = ✓` sends every open
-internship once, without changing `config.yaml`.
+internship once, without changing `config.yaml`. Other boxes: `dry_run` (look,
+send nothing), `auto` (behave like a scheduled run: the daily summary if it's
+the day's first, otherwise a quick check), `probe` (try the addresses in
+`candidates.txt`, or the file named in `probe_file`, from GitHub's servers) and
+`career` / `prepare` (the career coach).
 
 ---
 
