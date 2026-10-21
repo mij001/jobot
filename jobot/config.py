@@ -78,6 +78,8 @@ class PostingsConfig:
     """Opening each job's own page to read the full advert (text, poster or PDF)."""
     enabled: bool = True
     max_per_run: int = 60  # pages opened per run; already-read adverts are cached
+    workers: int = 3  # adverts read at the same time (each worker on its own connection)
+    max_seconds: int = 240  # stop opening adverts after this long; the rest waits for the next run
     read_posters: bool = True  # OCR poster images (Tesseract)
     ai_vision: bool = True  # let the AI read posters OCR can't
     max_ai_reads: int = 5
@@ -307,6 +309,8 @@ def _parse_postings(body: dict[str, Any]) -> PostingsConfig:
     return PostingsConfig(
         enabled=bool(body.get("enabled", True)),
         max_per_run=_opt_int(body.get("max_per_run", 60), "postings.max_per_run") or 0,
+        workers=min(8, max(1, _opt_int(body.get("workers", 3), "postings.workers") or 3)),
+        max_seconds=min(900, max(20, _opt_int(body.get("max_seconds", 240), "postings.max_seconds") or 240)),
         read_posters=bool(body.get("read_posters", True)),
         ai_vision=bool(body.get("ai_vision", True)),
         max_ai_reads=_opt_int(body.get("max_ai_reads", 5), "postings.max_ai_reads") or 0,

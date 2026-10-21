@@ -18,6 +18,8 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
+import time
 import unicodedata
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -34,6 +36,7 @@ from .filters import is_excluded, keyword_pattern, matching_keywords, qualificat
 from .http import Http
 from .models import Job
 from .sources.ikman import extract_initial_data
+from .swarm import parallel_map
 
 log = logging.getLogger(__name__)
 
@@ -424,6 +427,8 @@ def pick(all_jobs: list[Job], matched: list[Job], is_new: Callable[[Job], bool],
         if job.uid in seen or not is_new(job):
             continue
         seen.add(job.uid)
+        if job.remote:
+            continue  # the remote boards' APIs already gave the text, and their pages often refuse robots
         if job.uid in matched_uids:
             if len(job.description) < FULL:
                 first.append(job)
@@ -490,30 +495,66 @@ def apply(job: Job, entry: dict, cfg: Config) -> None:
 
 def enrich(jobs: list[Job], cache: PostingCache, cfg: Config, today: date,
            http: Http | None = None, vision: Vision | None = None) -> ReadStats:
-    """Read (or recall) the advert behind each job, at most postings.max_per_run new pages."""
+    """Read (or recall) the advert behind each job. At most postings.max_per_run new pages are opened per
+    run, a few at a time (postings.workers, each on its own connection) and no longer than
+    postings.max_seconds in all – what is left waits for the next run."""
     stats = ReadStats()
     http = http or Http(delay=1.0)
     blocked: set[str] = set()
-    budget = cfg.postings.max_per_run
+    lock = threading.Lock()
+    deadline = time.monotonic() + cfg.postings.max_seconds
+    fresh: list[Job] = []
+    for job in jobs:
+        if cache.get(job.uid) is None:
+            if len(fresh) < cfg.postings.max_per_run:
+                fresh.append(job)
+            else:
+                stats.left += 1
+    if vision is not None:
+        raw_vision = vision
+
+        def vision(data, kind, _raw=raw_vision):  # the AI reader keeps a count, so one image at a time
+            with lock:
+                return _raw(data, kind)
+
+    clone = getattr(http, "clone", None)
+
+    def read(job: Job):
+        host = urlparse(job.url).netloc
+        with lock:
+            if host in blocked or time.monotonic() > deadline:
+                return None  # not tried: it waits for the next run
+        try:
+            return read_posting(clone() if clone else http, job.url, cfg.postings.read_posters, vision)
+        except requests.HTTPError as exc:
+            code = getattr(exc.response, "status_code", 0)
+            if code in BLOCKED:
+                with lock:
+                    if host not in blocked:
+                        log.info("%s refused to show an advert (HTTP %s); not opening more of its pages today", host, code)
+                    blocked.add(host)
+            return exc
+        except Exception as exc:  # one odd page must not stop the run
+            log.debug("reading %s failed: %s", job.url, exc, exc_info=True)
+            return exc
+
+    read_in_parallel = cfg.postings.workers > 1 and clone is not None
+    results = dict(zip((j.uid for j in fresh),
+                       [r for r, _ in parallel_map(read, fresh, workers=cfg.postings.workers if read_in_parallel else 1)],
+                       strict=True))
+    if time.monotonic() > deadline and any(r is None for r in results.values()):
+        log.info("Reading adverts stopped after %d s; the rest waits for the next run", cfg.postings.max_seconds)
+
     for job in jobs:
         entry = cache.get(job.uid)
         if entry is None:
-            host = urlparse(job.url).netloc
-            if budget <= 0 or host in blocked:
+            if job.uid not in results:
+                continue  # over the per-run limit (already counted as left)
+            posting = results[job.uid]
+            if posting is None:
                 stats.left += 1
                 continue
-            budget -= 1
-            try:
-                posting = read_posting(http, job.url, cfg.postings.read_posters, vision)
-            except requests.HTTPError as exc:
-                code = getattr(exc.response, "status_code", 0)
-                if code in BLOCKED:
-                    blocked.add(host)
-                    log.info("%s refused to show an advert (HTTP %s); not opening more of its pages today", host, code)
-                stats.failed += 1
-                continue
-            except Exception as exc:  # one odd page must not stop the run
-                log.debug("reading %s failed: %s", job.url, exc, exc_info=True)
+            if isinstance(posting, Exception):
                 stats.failed += 1
                 continue
             entry = cache.put(job.uid, posting, today)

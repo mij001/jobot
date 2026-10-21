@@ -1032,8 +1032,12 @@ sources:
 # ===========================================================================
 postings:
   enabled: true
-  # Most new pages opened per run (1–3 s each); the rest wait for the next run.
+  # Most new pages opened per run; the rest wait for the next run. They are opened
+  # `workers` at a time (reading a poster with OCR takes ~15 s) and never for longer
+  # than `max_seconds` in all, so a run stays quick even right after new sites were added.
   max_per_run: 60
+  workers: 3
+  max_seconds: 240
   # Read the text out of poster images with OCR.
   read_posters: true
   # When OCR can't make sense of a poster, let the AI read it (Gemini only;

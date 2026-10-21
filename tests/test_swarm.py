@@ -429,3 +429,43 @@ def test_a_slow_site_cannot_run_past_the_whole_run_budget(cfg, monkeypatch):
     started = time.monotonic()
     jobot_main.scrape(cfg, {})
     assert time.monotonic() - started < 5
+
+
+# -- reading adverts ---------------------------------------------------------------------------------------------------------
+
+def test_adverts_are_read_side_by_side_within_a_time_budget(cfg, tmp_path, monkeypatch):
+    from jobot import postings
+    cfg.postings.workers, cfg.postings.max_per_run = 4, 20
+    jobs = [Job(source="S", source_id=str(i), title=f"Electrical Engineer {i}", url=f"https://s{i % 2}.lk/{i}") for i in range(8)]
+
+    def slow_read(http, url, read_posters=True, vision=None):
+        time.sleep(0.3)
+        return postings.Posting(text=f"BSc in Electrical Engineering. Apply to hr{url[-1]}@acme.lk", via=["page"])
+
+    monkeypatch.setattr(postings, "read_posting", slow_read)
+    started = time.monotonic()
+    stats = postings.enrich(jobs, postings.PostingCache(tmp_path / "c.json"), cfg, date(2026, 10, 21), http=FakeHttp())
+    assert time.monotonic() - started < 1.6 and stats.opened == 8 and stats.left == 0  # 8 x 0.3 s, four at a time (FakeHttp: no clone -> one at a time)
+
+    class Cloner(FakeHttp):
+        pass
+    started = time.monotonic()
+    cache = postings.PostingCache(tmp_path / "c2.json")
+    stats = postings.enrich(jobs, cache, cfg, date(2026, 10, 21), http=Cloner())  # has clone(): four at a time
+    assert time.monotonic() - started < 1.2 and stats.opened == 8
+    assert [j.contact for j in jobs] == [f"hr{i}@acme.lk" for i in range(8)]  # every advert landed on its own job
+
+    # the time budget stops the opening; what wasn't opened is counted for the next run
+    cfg.postings.max_seconds = 20
+    monkeypatch.setattr(postings.time, "monotonic", (lambda it=iter(range(10 ** 6)): lambda: next(it) * 10.0)())  # a clock running fast
+    cache = postings.PostingCache(tmp_path / "c3.json")
+    stats = postings.enrich(jobs, cache, cfg, date(2026, 10, 21), http=Cloner())
+    assert stats.opened < 8 and stats.left == 8 - stats.opened
+
+
+def test_remote_jobs_are_not_opened_for_their_advert(cfg):
+    from jobot import postings
+    remote_job = Job(source="Himalayas", source_id="1", title="Hardware Engineer", url="https://himalayas.app/x", remote=True,
+                     subfields=["electronics"])
+    local = Job(source="topjobs.lk", source_id="2", title="Hardware Engineer", url="https://topjobs.lk/x", subfields=["electronics"])
+    assert postings.pick([remote_job, local], [remote_job, local], lambda j: True, cfg) == [local]
