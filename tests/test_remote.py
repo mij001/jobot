@@ -1,7 +1,5 @@
 """Fully remote jobs: who may apply, the providers' formats, and the filters."""
 
-import json
-
 import pytest
 
 from jobot import history
@@ -28,6 +26,9 @@ def test_not_open_to_sri_lanka(where):
 
 def test_no_restriction_text_depends_on_the_board():
     assert not remote.open_to_sri_lanka("") and remote.open_to_sri_lanka("", empty_ok=True)
+
+
+CLASSIC = ["remotive", "remoteok", "weworkremotely", "jobicy", "himalayas", "workingnomads"]
 
 
 class FakeResp:
@@ -95,7 +96,8 @@ class FakeBoards:
 
 def test_every_board_is_read_and_only_jobs_open_to_sri_lanka_stay(cfg):
     http = FakeBoards()
-    jobs = remote.fetch(http, {"workers": 1, "queries": ["embedded"], "jobicy_tags": ["pcb"]}, cfg)
+    jobs = remote.fetch(http, {"workers": 1, "queries": ["embedded"], "jobicy_tags": ["pcb"], "remoteok_tags": [],
+                               "providers": CLASSIC}, cfg)
     titles = sorted(j.title for j in jobs)
     assert titles == ["Electronics Engineer", "Embedded Firmware Engineer", "FPGA Engineer", "Hardware Engineer", "Network Engineer",
                       "PCB Layout Engineer", "Test Engineer"]
@@ -119,7 +121,7 @@ def test_a_board_that_fails_is_a_warning_not_a_lost_source(cfg):
             return super().get(url, params, **kw)
 
     http = Flaky()
-    jobs = remote.fetch(http, {"workers": 1, "queries": ["embedded"], "jobicy_tags": ["pcb"]}, cfg)
+    jobs = remote.fetch(http, {"workers": 1, "queries": ["embedded"], "jobicy_tags": ["pcb"], "remoteok_tags": [], "providers": CLASSIC}, cfg)
     assert jobs and http.warnings == ["himalayas: RuntimeError: boom"]
 
 
@@ -172,3 +174,73 @@ def test_linkedin_remote_mode_asks_for_remote_and_keeps_only_places_open_to_sri_
         __import__("pathlib").Path(__file__).parent / "fixtures" / "default_config.yaml"))
     assert http.params[0]["f_WT"] == "2"
     assert [(j.title, j.remote, j.location) for j in jobs] == [("Embedded Engineer", True, "Remote – Sri Lanka")]
+
+
+# -- more boards -----------------------------------------------------------------------------------------------------------
+
+def test_eligibility_has_a_third_answer_for_places_that_are_not_named():
+    assert remote.eligibility("Remote") == "unsure" and remote.eligibility("") == "unsure"
+    assert remote.eligibility("", empty="open") == "open"
+    assert remote.eligibility("Remote - US") == "closed" and remote.eligibility("Remote – Toronto") == "closed"
+    assert remote.eligibility("Worldwide") == "open" and remote.eligibility("REMOTE (Global)") == "open"
+    assert remote.eligibility("Flexible / multiple locations") == "unsure"
+
+
+class MoreBoards(FakeBoards):
+    def get(self, url, params=None, **kw):
+        self.requested.append((url, dict(params or {})))
+        if "jobspresso" in url:
+            return FakeResp(text="""<?xml version="1.0"?><rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/"><channel>
+              <item><title>Firmware Engineer</title><link>https://jobspresso.co/job/1/</link><dc:creator><![CDATA[Acme<br>⚲&nbsp;Worldwide]]></dc:creator>
+              <pubDate>Wed, 21 Oct 2026 09:00:37 +0000</pubDate><description><![CDATA[Write C for sensors]]></description></item>
+              <item><title>Support Lead</title><link>https://jobspresso.co/job/2/</link><dc:creator><![CDATA[Beta<br>⚲&nbsp;United States]]></dc:creator></item>
+              <item><title>Hardware Tester</title><link>https://jobspresso.co/job/3/</link><dc:creator><![CDATA[Gamma<br>⚲ Remote]]></dc:creator></item></channel></rss>""")
+        if "nodesk" in url:
+            return FakeResp(text="""<?xml version="1.0"?><rss version="2.0"><channel><item><title>Embedded Engineer at Delta</title>
+              <link>https://nodesk.co/remote-jobs/delta-embedded/</link><description>Build firmware</description></item></channel></rss>""")
+        if "hnrss" in url:
+            return FakeResp(text="""<?xml version="1.0"?><rss version="2.0"><channel>
+              <item><title><![CDATA[New comment by a in "Ask HN: Who is hiring?"]]></title><link>https://news.ycombinator.com/item?id=1</link>
+              <pubDate>Mon, 20 Oct 2026 10:00:00 +0000</pubDate>
+              <description><![CDATA[ <p>Epsilon | Senior Firmware Engineer | REMOTE (Global) | Full-time<p>We make sensors. Apply at epsilon.example]]></description></item>
+              <item><title><![CDATA[New comment by b in "Ask HN"]]></title><link>https://news.ycombinator.com/item?id=2</link>
+              <description><![CDATA[ <p>Zeta | Backend Engineer | Helsinki | ONSITE | Full-time<p>No remote here]]></description></item>
+              <item><title><![CDATA[New comment by c in "Ask HN"]]></title><link>https://news.ycombinator.com/item?id=3</link>
+              <description><![CDATA[ <p>Eta | Embedded Developer | REMOTE (US only, US time zones) | Full-time<p>Americans only]]></description></item>
+              <item><title><![CDATA[New comment by d in "Ask HN"]]></title><link>https://news.ycombinator.com/item?id=4</link>
+              <description><![CDATA[ <p>Just a question about remote work, no pipes here<p>x]]></description></item></channel></rss>""")
+        if "greenhouse" in url:
+            return FakeResp({"jobs": [{"id": 1, "title": "Test Engineer", "absolute_url": "https://gh.example/1", "location": {"name": "Remote - Anywhere"}},
+                                      {"id": 2, "title": "Sales", "absolute_url": "https://gh.example/2", "location": {"name": "Remote - US"}},
+                                      {"id": 3, "title": "Onsite", "absolute_url": "https://gh.example/3", "location": {"name": "Berlin"}}]})
+        if "lever" in url:
+            return FakeResp([{"id": "l1", "text": "Power Electronics Engineer", "hostedUrl": "https://lever.example/1", "workplaceType": "remote",
+                              "categories": {"location": "Remote"}, "createdAt": 1792014273795, "descriptionPlain": "Design converters"},
+                             {"id": "l2", "text": "Onsite", "hostedUrl": "https://lever.example/2", "workplaceType": "onsite", "categories": {"location": "Austin"}}])
+        if "ashbyhq" in url:
+            return FakeResp({"jobs": [{"id": "a1", "title": "PCB Engineer", "jobUrl": "https://ashby.example/1", "location": "Remote - Worldwide",
+                                       "isRemote": True, "workplaceType": "Remote", "descriptionPlain": "Lay out boards", "publishedAt": "2026-10-01T00:00:00+00:00"},
+                                      {"id": "a2", "title": "Hybrid", "jobUrl": "https://ashby.example/2", "location": "SF", "isRemote": True, "workplaceType": "Hybrid"}]})
+        if "remoteok" in url and (params or {}).get("tag") == "hardware":
+            return FakeResp([{"legal": ""}, {"id": "t1", "position": "Analog Designer", "company": "Theta", "url": "https://remoteok.com/t1", "location": ""}])
+        return super().get(url, params, **kw)
+
+
+def test_the_new_boards_are_read_and_unsure_jobs_are_kept_for_the_ai(cfg):
+    http = MoreBoards()
+    jobs = remote.fetch(http, {"workers": 1, "providers": ["jobspresso", "nodesk", "hn_hiring", "boards", "remoteok"], "remoteok_tags": ["hardware"],
+                               "boards": [{"ats": "greenhouse", "slug": "g", "name": "GreenCo"}, {"ats": "lever", "slug": "l", "name": "LeverCo"},
+                                          {"ats": "ashby", "slug": "a", "name": "AshbyCo"}, {"ats": "icims", "slug": "x", "name": "Nope"}]}, cfg)
+    by = {j.title: j for j in jobs}
+    assert sorted(by) == ["Analog Designer", "Electronics Engineer", "Embedded Engineer", "Firmware Engineer", "Hardware Tester", "PCB Engineer",
+                          "Power Electronics Engineer", "Senior Firmware Engineer", "Test Engineer"]  # ("Electronics Engineer": Remote OK's front page)
+    assert (by["Firmware Engineer"].remote_rule, by["Firmware Engineer"].location, by["Firmware Engineer"].company) == ("open", "Remote – open worldwide", "Acme")
+    assert by["Hardware Tester"].remote_rule == "unsure" and by["Hardware Tester"].location == "Remote – Remote"  # names no place: for the AI
+    assert by["Embedded Engineer"].remote_rule == "unsure" and by["Embedded Engineer"].company == "Delta" and by["Embedded Engineer"].location == "Remote – place not stated"
+    assert by["Senior Firmware Engineer"].company == "Epsilon" and by["Senior Firmware Engineer"].remote_rule == "open" and by["Senior Firmware Engineer"].posted == "2026-10-20"
+    assert by["Test Engineer"].remote_rule == "open" and by["Test Engineer"].source == "GreenCo"
+    assert by["Power Electronics Engineer"].remote_rule == "unsure" and by["Power Electronics Engineer"].description == "Design converters"
+    assert by["PCB Engineer"].source == "AshbyCo" and by["PCB Engineer"].remote_rule == "open"
+    assert by["Analog Designer"].remote_rule == "open"  # Remote OK: an empty place means no restriction
+    assert http.warnings == ["Nope: unknown job board type 'icims'"]
+    assert ("https://remoteok.com/api", {"tag": "hardware"}) in http.requested

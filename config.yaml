@@ -693,7 +693,7 @@ schedule:
 #  name below), a `name:` and `every_hours:` – e.g. a fast entry for the pages
 #  that change all day and a slower one for the long tail.
 #  Entries that need a secret (`jooble`) or your mailbox (`email_alerts`) are
-#  switched off until you set them up (see the README).
+#  switched on but say "skipped" in the report until you set them up (README).
 # ===========================================================================
 sources:
   topjobs:
@@ -901,17 +901,35 @@ sources:
         company: SLT-Mobitel
         subfield: telecom
 
-  # Fully remote jobs open to people in Sri Lanka (see the note under the sources). Six free boards:
-  # Remote OK, We Work Remotely, Jobicy, Himalayas, Working Nomads (Remotive has its own entry below).
+  # Fully remote jobs open to people in Sri Lanka (see the note under the sources). Ten free boards, read together:
+  # Remote OK, We Work Remotely, Jobicy, Himalayas, Working Nomads, Jobspresso, NoDesk, the monthly "Who is hiring"
+  # thread on Hacker News, and the career pages of a few hardware employers (Remotive has its own entry below).
+  # Most remote adverts are limited to certain countries: jobot keeps the ones that say "worldwide" / "Asia" /
+  # nothing, and the AI reads the rest of the advert to decide (see the ai: section).
   remote_jobs:
     enabled: true
     every_hours: 3
-    providers: [remoteok, weworkremotely, jobicy, himalayas, workingnomads]
+    providers: [remoteok, weworkremotely, jobicy, himalayas, workingnomads, jobspresso, nodesk, hn_hiring, boards]
     # Extra words in a job's "who can apply" text that should count as open to you (e.g. "south asia").
     open_to: []
     queries: [embedded, firmware, electrical engineer, electronics engineer, hardware engineer, PCB, FPGA, power systems,
               controls engineer, automation engineer, IoT, RF engineer, telecommunications, network engineer, solar,
               test engineer, mechatronics, robotics]
+    # Remote OK category tags to read.
+    remoteok_tags: [hardware, electronics, embedded, iot, robotics, firmware, electrical, engineering, devops, networking]
+    # Employers' own job boards (Greenhouse / Lever / Ashby); only their remote jobs are used. To add one, find the
+    # name in the address of its careers page (jobs.lever.co/NAME, boards.greenhouse.io/NAME, jobs.ashbyhq.com/NAME).
+    boards:
+      - {ats: ashby, slug: cerebras, name: Cerebras}
+      - {ats: ashby, slug: quilter, name: Quilter}
+      - {ats: ashby, slug: skydio, name: Skydio}
+      - {ats: ashby, slug: span, name: Span}
+      - {ats: ashby, slug: wayve, name: Wayve}
+      - {ats: greenhouse, slug: chargepoint, name: ChargePoint}
+      - {ats: greenhouse, slug: samsara, name: Samsara}
+      - {ats: greenhouse, slug: oura, name: Oura}
+      - {ats: lever, slug: rigetti, name: Rigetti}
+      - {ats: lever, slug: voltus, name: Voltus}
 
   # Remotive asks API users to call about 4 times a day, so it gets its own, slower entry.
   remotive:
@@ -963,8 +981,10 @@ sources:
   # senders you list, nothing is marked read, moved or deleted. Subscribe to the
   # alerts on each site first. Needs the IMAP_USERNAME / IMAP_PASSWORD secrets (or
   # it reuses SMTP_USERNAME / SMTP_PASSWORD; a Gmail app password works for both).
+  # Switched on, but it only says "skipped" until the mailbox can be logged in to.
+  # Alerts in a layout jobot doesn't know are read by the AI (once each).
   email_alerts:
-    enabled: false
+    enabled: true
     host: imap.gmail.com
     folder: INBOX
     days: 3
@@ -972,9 +992,9 @@ sources:
     senders: [xpress.jobs, linkedin.com, rooster.jobs, jobsnet.lk, indeed.com, topjobs.lk, careerjet, jooble.org]
 
   # Jooble gathers adverts from many sites; its free API needs a key (jooble.org/api/about)
-  # stored as the JOOBLE_API_KEY secret.
+  # stored as the JOOBLE_API_KEY secret. Switched on, but skipped until the key is there.
   jooble:
-    enabled: false
+    enabled: true
     location: Sri Lanka
     queries: [electrical engineer, electronic engineer, automation engineer, telecommunication engineer, solar engineer, maintenance engineer]
     max_pages: 2
@@ -1095,6 +1115,20 @@ ai:
   min_score: 4
   batch_size: 20 # jobs per AI request
   requests_per_minute: 8 # stay under the free-tier limit
+
+  # "Helpers": judgment calls keywords can't make. Each is one batched request whose answers are remembered
+  # (data/ai_decisions.json), so a day needs only a handful. They stop for the day at `daily_budget` requests
+  # (Gemini's free tier is small – keep this modest); without a key or budget the plain rules apply.
+  #   * triage     – unmatched jobs with generic titles ("Technical Officer", "Project Engineer") are shown to the AI,
+  #                  which picks the ones an EEE graduate would apply for; the ones it turns down aren't opened (OCR).
+  #   * remote     – each new remote job's advert is read: open to someone in Sri Lanka? fully remote?
+  #   * alerts     – job-alert e-mails in a layout jobot doesn't know.
+  helpers: true
+  daily_budget: 30   # AI requests per day for all helpers together
+  triage_batch: 60   # job titles per triage request
+  triage_calls: 3    # most triage requests in one run
+  vet_batch: 25      # remote jobs per eligibility request
+  alert_calls: 4     # most unknown alert e-mails read in one run
 
 # ===========================================================================
 #  7. CAREER COACH (optional, free – needs the AI key and your resume)

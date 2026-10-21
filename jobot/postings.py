@@ -416,10 +416,11 @@ def _maybe(job: Job, cfg: Config) -> bool:
     return not title_levels or title_levels[-1].enabled
 
 
-def pick(all_jobs: list[Job], matched: list[Job], is_new: Callable[[Job], bool], cfg: Config) -> list[Job]:
+def pick(all_jobs: list[Job], matched: list[Job], is_new: Callable[[Job], bool], cfg: Config,
+         skip: set[str] | frozenset[str] = frozenset()) -> list[Job]:
     """New matched jobs first (to check their qualification and details), then
     new 'maybes' – jobs with a technical title whose list entry was too thin
-    to tell whether they're EEE at all."""
+    to tell whether they're EEE at all. `skip` = uids the AI already turned down."""
     matched_uids = {j.uid for j in matched}
     matched_fps = {j.fingerprint for j in matched}
     first, maybes, seen = [], [], set()
@@ -432,7 +433,7 @@ def pick(all_jobs: list[Job], matched: list[Job], is_new: Callable[[Job], bool],
         if job.uid in matched_uids:
             if len(job.description) < FULL:
                 first.append(job)
-        elif job.fingerprint not in matched_fps and _maybe(job, cfg):
+        elif job.fingerprint not in matched_fps and job.uid not in skip and _maybe(job, cfg):
             maybes.append(job)
     return first + maybes
 

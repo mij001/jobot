@@ -1,6 +1,6 @@
 """Jooble – a job search engine that gathers adverts from many Sri Lankan sites, through its official free API.
 
-Off by default. Get a free key at https://jooble.org/api/about and store it as the JOOBLE_API_KEY secret.
+On by default, but skipped until there is a key. Get a free key at https://jooble.org/api/about and store it as the JOOBLE_API_KEY secret.
 """
 
 from __future__ import annotations
@@ -8,8 +8,10 @@ from __future__ import annotations
 import hashlib
 import re
 
+import requests
+
 from ..config import Config
-from ..http import Http
+from ..http import Http, SourceSkipped
 from ..models import Job
 from ..swarm import gather
 
@@ -62,6 +64,11 @@ def fetch(http: Http, opts: dict, cfg: Config) -> list[Job]:
                 break
         return jobs
 
-    found = gather(http, opts.get("queries") or ["electrical engineer"], one, workers=int(opts.get("workers", 2)),
-                   label=lambda q: f"search {q!r}")
+    try:
+        found = gather(http, opts.get("queries") or ["electrical engineer"], one, workers=int(opts.get("workers", 2)),
+                       label=lambda q: f"search {q!r}")
+    except requests.HTTPError as exc:
+        if getattr(exc.response, "status_code", 0) in (401, 403):
+            raise SourceSkipped("Jooble rejected the key – check the JOOBLE_API_KEY secret") from exc
+        raise
     return list({j.source_id: j for j in found}.values())

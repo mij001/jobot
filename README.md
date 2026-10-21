@@ -46,6 +46,9 @@ Optional extras:
 
 * a **free AI reviewer** that scores every new job against a short profile
   of you, explains the score in one line, and hides poor fits;
+* **AI helpers** for the judgment calls keywords can't make: is this remote
+  job really open to someone in Sri Lanka, is "Technical Officer" EEE work,
+  what is in this alert e-mail ([details](#ai-helpers));
 * a **settings web page** (Material You design, or an **Apple-style**
   look, with your own colour; installable on your phone's home screen)
   where you flip switches instead of editing YAML, with a **dashboard** and
@@ -135,6 +138,10 @@ project ideas, preparing for a job) uses `ai.smart_models` – left blank it
 tries Gemini's best free model (`gemini-pro-latest`) first and falls back to
 the best Flash model if Pro isn't free on your key. The report names the
 model that answered. A busy model (503) is retried once after 20 seconds.
+
+The same key also powers the [AI helpers](#ai-helpers) (remote-job eligibility,
+triage of generic job titles, unknown alert e-mails), which share a small daily
+budget of requests.
 
 If the key is missing, the free quota runs out or the AI answers nonsense,
 the run carries on with the plain keyword results – nothing is lost.
@@ -496,7 +503,7 @@ or `daily` / `off`) adds the "Your week" block and suggestions, and
   category; Rooster – 31 searches; LinkedIn – 20 searches; ITPro.lk, TechJobs.lk,
   LankaJobs, FindMyJob.lk, Gazette.lk; CEB and SLT-Mobitel; twelve **university
   vacancy pages** (lecturer, instructor, technical-officer posts); and
-  [fully remote jobs](#fully-remote-jobs).
+  [fully remote jobs](#fully-remote-jobs) (ten feeds and hardware employers' boards).
 * **Adverts are read in parallel too.** Many Sri Lankan adverts are poster
   images, which are read with OCR; `postings.workers` (4) of them are read at
   once and `postings.max_seconds` (240) caps the time, so a run stays quick even
@@ -514,26 +521,65 @@ or `daily` / `off`) adds the "Your week" block and suggestions, and
 
 ### Fully remote jobs
 
-`sources.remote_jobs` reads six free remote-job boards – Remote OK, We Work
-Remotely, Jobicy, Himalayas, Working Nomads and (as its own, slower entry)
-Remotive – and `linkedin_remote` asks LinkedIn's "remote" filter for jobs listed
-in Sri Lanka. Most remote jobs are open only to people in the US or Europe, so
-every job is checked against what the employer says about where candidates may
-live: only **worldwide / anywhere / APAC / Asia / Sri Lanka** (or no restriction
-at all) are kept, and ones that ask for a time zone Sri Lanka can't meet ("must
-overlap US hours", "CET ± 3 hours", "Southeast Asia") are dropped. What is kept is
-marked 🌍 **Remote**, skips the `locations` / `include_overseas` filters, and then
-goes through your usual sub-field, level and qualification settings – so with
-sub-fields switched off you will see fewer. The dashboard's Jobs tab has a
-**Remote only** filter. Each board asks for a link back, which the job links
-give. Remote boards don't publish much EEE work (hardware, firmware, PCB, FPGA,
-IoT, network and test engineering are what turns up), and "senior" jobs are
-dropped by the default levels.
+`sources.remote_jobs` reads ten free remote-job feeds at once – Remote OK (ten
+category tags), We Work Remotely, Jobicy, Himalayas, Working Nomads, Jobspresso,
+NoDesk, the monthly "Who is hiring" thread on Hacker News and the careers pages
+of ten hardware employers (Cerebras, Skydio, Wayve, ChargePoint, Samsara, Oura,
+Rigetti, Voltus … – add more under `boards:` with the name from their
+Greenhouse / Lever / Ashby address) – plus Remotive as its own, slower entry and
+`linkedin_remote`, which asks LinkedIn's "remote" filter for jobs listed in Sri
+Lanka. Most remote jobs are open only to people in the US or Europe, so each one
+is judged twice:
+
+1. **Plain rules** read what the employer says about where candidates may live.
+   **Worldwide / anywhere / APAC / Asia / Sri Lanka** (or no restriction at all)
+   pass; "US only", "EU", "must overlap US hours", "CET ± 3 hours" and the like
+   are dropped; anything the rules can't settle is left *unsure*.
+2. **The AI reads the advert** for the new ones (see [AI helpers](#ai-helpers)):
+   is it open to someone in Sri Lanka with no work permit elsewhere, and is it
+   *fully* remote? "Closed" and "hybrid" ones are dropped; the rest carry a
+   one-line note ("Remote, open to Sri Lanka (checked by the AI): worldwide,
+   contractors welcome" or "Remote – check eligibility"). Without an AI key the
+   plain rules alone decide, and unsure jobs say "Eligibility not checked".
+
+What is kept is marked 🌍 **Remote**, skips the `locations` /
+`include_overseas` filters, and then goes through your usual sub-field, level and
+qualification settings – so with sub-fields switched off you will see fewer. The
+dashboard's Jobs tab has a **Remote only** filter. Each board asks for a link
+back, which the job links give. Remote boards don't publish much EEE work
+(hardware, firmware, PCB, FPGA, IoT, network and test engineering are what turns
+up), and "senior" jobs are dropped by the default levels.
+
+### AI helpers
+
+Besides scoring the day's jobs, the AI key is used where keywords can't decide
+(`ai.helpers`, on by default). Each is **one batched request for dozens of jobs**,
+answers are remembered in `data/ai_decisions.json`, and a small daily budget
+(`ai.daily_budget`, 30 requests) stops the lot for the day – Gemini's free tier is
+small. Without a key, or once the budget is used, the plain rules apply instead
+and nothing breaks.
+
+* **Triage.** Titles like "Technical Officer", "Project Engineer" or "Assistant
+  Engineer" don't say what field they are in, so keyword matching misses them. The
+  unmatched engineering-looking jobs are shown to the AI (title, company, site,
+  a short snippet), which says whether an EEE graduate would plausibly apply and
+  for which sub-field. The ones it picks carry a "Picked by the AI" note and then go
+  through your usual level and qualification settings. The ones it turns down are
+  not opened for OCR any more, which also keeps the advert backlog short.
+* **Remote eligibility.** As described above.
+* **Job-alert e-mails** in a layout jobot doesn't know (see the next section): the
+  AI lists the vacancies in them, once per e-mail.
+
+The message footer says what the AI did ("AI triage: looked at 40 jobs … picked
+3", "AI remote check: 12 jobs checked, 7 dropped"), and the dashboard's job card
+shows the note. Everything in an advert is treated as untrusted text. Tune it
+under `ai:` in `config.yaml` (`daily_budget`, `triage_batch`, `triage_calls`,
+`vet_batch`, `alert_calls`; `helpers: false` turns the lot off).
 
 ### Optional extra channels
 
-These need a little set-up and are **off until you turn them on** (Sites card, or
-`enabled: true` in `config.yaml`):
+These two are **switched on, but say "skipped" in the report until you set them
+up** (so nothing fails, and nothing needs turning on later):
 
 * **Job-alert e-mails** (`email_alerts`). XpressJobs, Observer Jobs and a few
   others refuse GitHub's servers, but they will happily e-mail you new jobs. Subscribe
@@ -541,12 +587,17 @@ These need a little set-up and are **off until you turn them on** (Sites card, o
   over IMAP and turns the vacancy links into jobs. It is **read-only**: only
   messages from the senders you list (`senders:`), nothing is marked read,
   moved or deleted. Add `IMAP_USERNAME` / `IMAP_PASSWORD` secrets (or it reuses
-  `SMTP_USERNAME` / `SMTP_PASSWORD`; a Gmail app password works for both). Every
-  site formats its e-mails differently, so check the first run's log
-  ("Email alerts: N vacancy link(s) in M message(s)").
+  `SMTP_USERNAME` / `SMTP_PASSWORD`; a Gmail app password works for both, with
+  IMAP switched on in Gmail's settings). LinkedIn, XpressJobs, Rooster, Jobsnet,
+  Indeed and TopJobs e-mails are understood directly; **any other alert is read by
+  the AI** (once per e-mail, remembered). A refused login shows as "skipped (the
+  mailbox refused the login …)".
 * **Jooble** (`jooble`). A job search engine that gathers adverts from many sites.
   Its official API is free: get a key at <https://jooble.org/api/about> and add it as
-  the `JOOBLE_API_KEY` secret.
+  the `JOOBLE_API_KEY` secret. Skipped until the key is there (or if it is rejected).
+
+One more can't be switched on from here, because it needs a computer of yours:
+
 * **Sites that block GitHub, from your own computer.** `.github/workflows/local.yml`
   runs only XpressJobs and Observer Jobs on a computer of yours, where they see an
   ordinary home connection. Register your computer as a runner (repository
@@ -554,8 +605,8 @@ These need a little set-up and are **off until you turn them on** (Sites card, o
   **variable** `LOCAL_RUNNER` = `true` (*Settings → Secrets and variables → Actions →
   Variables*). The workflow only ever runs on a timer or by hand, never for pull
   requests, so nobody else's code can reach your computer through it – keep
-  *Fork pull request workflows* on "require approval". This one has not been tried on
-  a real runner yet.
+  *Fork pull request workflows* on "require approval". Until you do, the workflow
+  does nothing. This one has not been tried on a real runner yet.
 
 ### More sites
 

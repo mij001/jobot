@@ -14,11 +14,11 @@ import time
 
 import requests
 
-from . import ai, coach, notifiers, postings, stats, suggestions
+from . import ai, coach, notifiers, postings, stats, suggestions, triage
 from .history import History
 from .config import GROUP_BY, ORDER_BY, Config, ConfigError, load_config
 from .filters import select_jobs
-from .http import Http, SourceTimeout
+from .http import Http, SourceSkipped, SourceTimeout
 from .models import Job
 from .report import Report, SourceResult
 from .schedule import Schedule
@@ -113,7 +113,7 @@ def print_options(cfg: Config) -> None:
 
 
 def scrape(cfg: Config, env: dict[str, str] | None = None, schedule: Schedule | None = None,
-           now: datetime | None = None, full: bool = True) -> tuple[list[Job], list[SourceResult]]:
+           now: datetime | None = None, full: bool = True, extract=None) -> tuple[list[Job], list[SourceResult]]:
     """Read every enabled site, all of them at the same time. A site that timed out or errored is asked
     once more at the end. Sites with `every_hours` are skipped on quick runs until they are due again."""
     env = dict(os.environ if env is None else env)
@@ -149,7 +149,7 @@ def scrape(cfg: Config, env: dict[str, str] | None = None, schedule: Schedule | 
         http = Http(delay=float(opts.get("delay_seconds", 1.0)), timeout=(10, float(opts.get("timeout_seconds", 30))),
                     retries=int(opts.get("retries", 2)),
                     deadline=min(run_deadline, started + (budget or float(opts.get("site_seconds", cfg.schedule.site_seconds)))))
-        given = {**opts, "_env": env}
+        given = {**opts, "_env": env, "_extract": extract}  # `extract`: the AI that reads alert e-mails of unknown layout
         if not full:  # a quick check only needs the newest page of each list; the daily run reads the deep ones
             for key_, quick_key in (("max_pages", "quick_pages"), ("query_pages", "quick_query_pages")):
                 if quick_key in opts:
@@ -170,6 +170,10 @@ def scrape(cfg: Config, env: dict[str, str] | None = None, schedule: Schedule | 
 
     jobs: list[Job] = []
     for (key, opts, _module, result), (done, err) in zip(plan, outcomes, strict=True):
+        if isinstance(err, SourceSkipped):
+            result.skipped = str(err)
+            log.info("%-14s skipped: %s", result.name, result.skipped)
+            continue
         if err is not None:
             result.error = _short_error(err)
             log.warning("%-14s FAILED: %s", result.name, result.error)
@@ -288,15 +292,22 @@ def run(argv: list[str] | None = None) -> int:
         log.info("%s", "Quick check (the daily summary is sent by the first run after %02d:00)" % cfg.schedule.digest_hour
                  if quick else "Daily run")
 
-    all_jobs, results = scrape(cfg, env, schedule, now, full=not quick)
+    # Where keywords can't decide the AI does: it reads job-alert e-mails of unknown layout, rescues unmatched jobs that
+    # look like EEE work (and the ones it turns down aren't opened for OCR) and checks remote jobs are open to Sri Lanka.
+    # Answers are cached and capped by a small daily budget; see triage.py.
+    helpers = triage.Helpers(cfg, env, schedule, data_dir, today, enabled=not args.no_ai)
+    all_jobs, results = scrape(cfg, env, schedule, now, full=not quick, extract=helpers.extract_alert)
     matched = select_jobs(all_jobs, cfg)
     store = SeenStore(args.state)
+    judged = helpers.triage(all_jobs, matched)
+    if judged.rescued:
+        matched = select_jobs(all_jobs, cfg)
 
     # Open the adverts themselves (text, posters, PDFs), then filter again with what they say.
     read_stats = None
     if cfg.postings.enabled and not args.no_read:
         cache = postings.PostingCache(data_dir / "postings_cache.json")
-        to_read = postings.pick(all_jobs, matched, (lambda j: True) if args.all else store.is_new, cfg)
+        to_read = postings.pick(all_jobs, matched, (lambda j: True) if args.all else store.is_new, cfg, skip=judged.rejected)
         vision = None if args.no_ai else ai.poster_reader(cfg, env)
         read_stats = postings.enrich(to_read, cache, cfg, today, vision=vision)
         log.info("%s", read_stats.summary or "No new adverts to read")
@@ -312,15 +323,24 @@ def run(argv: list[str] | None = None) -> int:
     if history.note:
         log.info("%s", history.note)
 
-    shown, ai_note, outcome = new, None, None
+    # Remote jobs: is each really open to someone in Sri Lanka, and fully remote? (the AI reads the advert)
+    vetted = helpers.vet_remote(new)
+    kept = [j for j in new if j.uid not in vetted.vetoed]
+    for job in new:
+        if job.uid in vetted.vetoed:
+            log.info("Dropped remote job %r: %s", job.title, vetted.vetoed[job.uid])
+
+    shown, ai_note, outcome = kept, None, None
     if cfg.ai.enabled and not args.no_ai:
         if env.get("AI_API_KEY") or env.get("AI_BASE_URL"):
-            outcome = ai.review(new, cfg, env, profile_extra=coach.digest_for_review(history, cfg))
+            outcome = ai.review(kept, cfg, env, profile_extra=coach.digest_for_review(history, cfg))
             ai_note = outcome.summary
-            shown = [j for j in new if not ai.is_hidden(j, cfg)]
+            shown = [j for j in kept if not ai.is_hidden(j, cfg)]
             log.info("%s", ai_note)
         else:
             log.info("AI review is on but AI_API_KEY isn't set – skipping it")
+    for line in helpers.out.notes:
+        log.info("%s", line)
 
     record = stats.run_record(today, results, all_jobs, matched, new, shown, cfg, outcome, read_stats)
     runs = history.merged_runs(record)
@@ -333,7 +353,7 @@ def run(argv: list[str] | None = None) -> int:
         read_note=read_stats.summary if read_stats else None,
         history_note=history.note if weekly_day else None, dashboard_url=dashboard_url(env),
         weekly=(stats.week_summary(runs, cfg, today) + coach.weekly_lines(history, cfg)) if weekly_day else [],
-        reminders=reminders, at=now.strftime("%H:%M") if quick else None,
+        reminders=reminders, at=now.strftime("%H:%M") if quick else None, notes=helpers.out.notes,
         missed=stats.near_misses(all_jobs, cfg, cfg.dropped_list) if weekly_day and cfg.dropped_list else [],
         tips=[t["text"] for t in tips if t["kind"] != "insight"][:3] if weekly_day else [],
     )
@@ -369,6 +389,7 @@ def run(argv: list[str] | None = None) -> int:
             store.add(job, today)
         store.prune(cfg.remember_days, today)
         store.save()
+        helpers.save()
         if not quick:
             schedule.mark_digest(now)
         schedule.save()

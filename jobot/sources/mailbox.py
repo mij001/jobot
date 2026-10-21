@@ -4,9 +4,9 @@ Some sites refuse visits from cloud servers but happily e-mail you new jobs when
 This reads those e-mails from your own mailbox over IMAP – read-only, only messages from the senders you list,
 nothing is marked read, moved or deleted – and turns the vacancy links in them into jobs.
 
-Off by default (`sources.email_alerts.enabled`). It needs IMAP_USERNAME / IMAP_PASSWORD secrets, or reuses
-SMTP_USERNAME / SMTP_PASSWORD (a Gmail app password works for both). Subscribe to the alerts yourself on each
-site, pointed at that mailbox, then list the sender domains in `senders`.
+On by default, but it is simply skipped (it says so in the report) until it can log in: it needs IMAP_USERNAME /
+IMAP_PASSWORD secrets, or reuses SMTP_USERNAME / SMTP_PASSWORD (a Gmail app password works for both). Subscribe
+to the alerts yourself on each site, pointed at that mailbox, then list the sender domains in `senders`.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from bs4 import BeautifulSoup
 
 from ..config import Config
-from ..http import Http
+from ..http import Http, SourceSkipped
 from ..models import Job
 
 NAME = "Email alerts"
@@ -74,7 +74,9 @@ def _domain(host: str) -> str:
     return ".".join(bits[-2:]) if len(bits) >= 2 else host.lower()
 
 
-def parse_message(raw: bytes, sender_domains: list[str]) -> list[Job]:
+def parse_message(raw: bytes, sender_domains: list[str], extract=None) -> list[Job]:
+    """The vacancies in one alert e-mail. `extract` (the AI, see triage.Helpers.extract_alert) is only asked when the
+    layout is one the plain rules find nothing in."""
     msg = email.message_from_bytes(raw, policy=policy.default)
     sender = msg.get("From", "").lower()
     domain = next((d for d in sender_domains if d.lower() in sender), "")
@@ -112,7 +114,25 @@ def parse_message(raw: bytes, sender_domains: list[str]) -> list[Job]:
         around = " ".join((a.find_parent(["td", "div", "li"]) or a).get_text(" ", strip=True).split())
         extra = around.replace(text, "", 1).strip(" -–·|,")[:100]
         jobs.append(Job(source=label, source_id=ident, title=text, url=href, company=extra, posted=day))
+    if not jobs and extract is not None:
+        jobs = _ask_ai(extract, msg, soup, label, day)
     return jobs
+
+
+def _ask_ai(extract, msg, soup: BeautifulSoup, label: str, day: str) -> list[Job]:
+    links, seen = [], set()
+    for a in soup.find_all("a", href=True):
+        href = _real_url(unescape(a["href"]).strip())
+        text = " ".join(a.get_text(" ", strip=True).split())
+        if href.startswith(("http://", "https://")) and href not in seen and 6 <= len(text) <= 140 \
+                and not _NOISE.match(text) and not re.search(r"unsubscribe|optout|opt-out|preferences", href, re.I):
+            seen.add(href)
+            links.append((text, href))
+    stamp = f"{msg.get('Message-ID') or ''}|{msg.get('Date') or ''}|{msg.get('Subject') or ''}|{msg.get('From') or ''}"
+    found = extract(hashlib.sha1(stamp.encode("utf-8", "replace")).hexdigest()[:16], str(msg.get("From") or ""),
+                    str(msg.get("Subject") or ""), soup.get_text(" ", strip=True), links)
+    return [Job(source=label, source_id=hashlib.sha1(row["url"].encode()).hexdigest()[:16], title=row["title"], url=row["url"],
+                company=row.get("company", ""), location=row.get("location", ""), posted=day) for row in found or []]
 
 
 def fetch(http: Http, opts: dict, cfg: Config) -> list[Job]:
@@ -129,7 +149,10 @@ def fetch(http: Http, opts: dict, cfg: Config) -> list[Job]:
     box = imaplib.IMAP4_SSL(opts.get("host") or "imap.gmail.com", int(opts.get("port", 993)), timeout=30)
     jobs: dict[str, Job] = {}
     try:
-        box.login(user, password)
+        try:
+            box.login(user, password)
+        except imaplib.IMAP4.error as exc:  # wrong or missing app password, IMAP not switched on: a set-up issue
+            raise SourceSkipped("the mailbox refused the login (Gmail needs an app password and IMAP switched on)") from exc
         box.select(opts.get("folder") or "INBOX", readonly=True)  # read-only: nothing is marked as read
         ids: list[bytes] = []
         for sender in senders:
@@ -140,7 +163,7 @@ def fetch(http: Http, opts: dict, cfg: Config) -> list[Job]:
             status, data = box.fetch(msg_id, "(BODY.PEEK[])")
             if status != "OK" or not data or not isinstance(data[0], tuple) or len(data[0][1]) > MAX_BYTES:
                 continue
-            for job in parse_message(data[0][1], senders):
+            for job in parse_message(data[0][1], senders, opts.get("_extract")):
                 jobs.setdefault(job.uid, job)
     finally:
         try:

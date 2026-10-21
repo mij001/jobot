@@ -847,11 +847,11 @@ const SOURCE_INFO = {
   ikman_search: ["ikman.lk – searches", "Keyword searches across all job ads, to catch ones in the wrong category"],
   rooster_more: ["Rooster – more searches", "A longer list of keyword searches"],
   university_pages: ["University vacancies", "Lecturer, instructor and technical-officer posts on university pages"],
-  remote_jobs: ["Remote jobs", "Fully remote jobs open to people in Sri Lanka – Remote OK, We Work Remotely, Jobicy, Himalayas, Working Nomads"],
+  remote_jobs: ["Remote jobs", "Fully remote jobs open to people in Sri Lanka – Remote OK, We Work Remotely, Jobicy, Himalayas, Working Nomads, Jobspresso, NoDesk, Hacker News \"Who is hiring\" and hardware employers\' own boards. The AI checks each advert is open to Sri Lanka"],
   remotive: ["Remotive", "Remote jobs (Remotive asks for about 4 visits a day)"],
   linkedin_remote: ["LinkedIn (remote)", "LinkedIn's remote filter, for jobs listed in Sri Lanka"],
-  email_alerts: ["Job-alert e-mails", "Reads the alert e-mails sites send you (read-only). Needs IMAP_USERNAME / IMAP_PASSWORD secrets – see the README"],
-  jooble: ["Jooble", "Job search engine, official API. Needs a free JOOBLE_API_KEY secret – see the README"],
+  email_alerts: ["Job-alert e-mails", "Reads the alert e-mails sites send you (read-only; the AI reads layouts it doesn\'t know). Skipped until the IMAP_USERNAME / IMAP_PASSWORD secrets are set – see the README"],
+  jooble: ["Jooble", "Job search engine, official API. Skipped until the free JOOBLE_API_KEY secret is set – see the README"],
 };
 const GROUP_BY = { level: "Level", qualification: "Education", subfield: "Sub-field", site: "Site", none: "None" };
 const ORDER_BY = { best_match: "Best match", newest: "Newest", closing_soon: "Closing soon", company: "Company", title: "Title" };
@@ -1220,7 +1220,7 @@ function sourceRow(key, opts) {
     get = () => ({ feeds: [...box.children].map((n) => n._get()).filter((f) => f.url).map((f) => ({ ...f, pages: Number(f.pages) || 1 })) });
   } else if (kind === "email_alerts") {
     const kw = chipInput(opts.senders, "Add a sender (domain)…", "Alert senders");
-    panel = el("div", {}, el("div", { class: "hint" }, "Only e-mails from these senders are read (read-only). Turn the switch on once the IMAP secrets are set."), kw);
+    panel = el("div", {}, el("div", { class: "hint" }, "Only e-mails from these senders are read (read-only). It stays skipped until the IMAP secrets are set."), kw);
     get = () => ({ senders: kw._values });
   } else if (Array.isArray(opts.queries)) {
     const kw = chipInput(opts.queries, "Add a search…", "Searches");

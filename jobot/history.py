@@ -69,7 +69,7 @@ def job_entry(job: Job, day: date, hidden: bool, cfg: Config) -> dict:
         "level": job.level, "qualifications": list(job.qualifications), "min_years": job.min_years,
         "ai_score": job.ai_score, "ai_reason": job.ai_reason, "importance": importance(job, cfg, hidden),
         "posted": job.posted, "closing": job.closing, "requirements": job.requirements,
-        "contact": job.contact, "salary": job.salary, "read_via": job.read_via, "watched": job.watched or None, "remote": job.remote or None,
+        "contact": job.contact, "salary": job.salary, "read_via": job.read_via, "watched": job.watched or None, "remote": job.remote or None, "ai_note": job.ai_note or None,
         # the skills / tools / certificates the advert mentions (drives the dashboard's skill demand)
         "skills": extract_skills(f"{job.title}\n{job.description}", cfg.coach.extra_skills),
     }

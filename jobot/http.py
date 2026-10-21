@@ -25,6 +25,11 @@ class SourceTimeout(TimeoutError):
     """The site used up the time it was given for this run."""
 
 
+class SourceSkipped(Exception):
+    """The site can't be read until the user sets something up (a wrong password, a rejected key): shown as
+    "skipped" with this message, not counted as a failure."""
+
+
 class Http:
     def __init__(self, delay: float = 1.0, timeout: tuple[float, float] = TIMEOUT, retries: int = 2,
                  deadline: float | None = None, warnings: list[str] | None = None):

@@ -6,8 +6,13 @@ job here is checked against where the employer says candidates may live (`open_t
 and those with a time-zone requirement that Sri Lanka can't meet are dropped. The kept jobs are marked
 remote, and then go through your usual sub-field / level / qualification settings.
 
-Providers (all free, public, and asking for a link back to them – the job links point to the source site):
-Remotive, Remote OK, We Work Remotely, Jobicy, Himalayas, Working Nomads. Choose with `providers:`.
+A job whose text names no place at all ("Remote") is "unsure": the AI reads the advert and settles it
+(see triage.vet_remote); without an AI key it is kept with a note to check.
+
+Providers (all free and public; the job links point to the source site, as most of them ask):
+Remotive, Remote OK (front page and by tag), We Work Remotely, Jobicy, Himalayas, Working Nomads,
+Jobspresso, NoDesk, Hacker News "Who is hiring", and employers' own job boards on Greenhouse, Lever
+and Ashby (`boards:`). Choose with `providers:`.
 """
 
 from __future__ import annotations
@@ -40,19 +45,39 @@ _BOUND = re.compile(r"\banywhere (?:in|within) (?!(?:the )?world\b)", re.I)  # "
 _ZONE = re.compile(r"\btime\s?zones?\b|\boverlap\b|\b(?:cet|cest|est|edt|cst|cdt|pst|pdt|eet|bst|gmt|utc)\b|"
                    r"\b(?:us|u\.s\.|eu|uk|european|american|north american)\s+(?:time|hours|business hours)\b", re.I)
 _SL_ZONE = re.compile(r"\b(?:ist|gmt\s*\+\s*5|utc\s*\+\s*5|asia|apac)\b", re.I)
+# Places that, named without a "worldwide"-type word, mean the job is limited to them.
+_PLACES = re.compile(
+    r"\b(?:usa?|u\.s\.a?|united states|americas?|north america|canada|canadian|mexico|latam|latin america|south america|brazil|"
+    r"argentina|colombia|chile|peru|europe|european|eu|emea|uk|u\.k\.|united kingdom|britain|england|scotland|ireland|"
+    r"germany|france|spain|portugal|italy|netherlands|belgium|switzerland|austria|poland|romania|bulgaria|ukraine|czech(?:ia)?|"
+    r"hungary|greece|turkey|sweden|norway|denmark|finland|baltics|nordics?|australia|new zealand|oceania|anz|india|pakistan|"
+    r"bangladesh|nepal|singapore|malaysia|indonesia|philippines|vietnam|thailand|japan|korea|china|hong kong|taiwan|israel|uae|"
+    r"dubai|saudi(?: arabia)?|middle east|mena|africa|nigeria|kenya|south africa|egypt|ghana|london|new york|san francisco|"
+    r"toronto|berlin|sydney)\b", re.I)
+
+
+def eligibility(where: str, empty: str = "unsure") -> str:
+    """Plain-text check of a job's "who may apply" text for someone living in Sri Lanka:
+    "open" (worldwide / anywhere / APAC / Asia / Sri Lanka, no incompatible time zone), "closed" (limited to
+    other places or time zones) or "unsure" (names no place – the AI reads the advert). `empty` is what an
+    empty text means for a given board."""
+    text = " ".join(html.unescape(where or "").split())
+    if not text:
+        return empty
+    if re.search(r"sri\s?lanka", text, re.I):
+        return "open"
+    if _BOUND.search(text):
+        return "closed"
+    if _WORLD.search(text):
+        return "open" if not _ZONE.search(text) or _SL_ZONE.search(text) else "closed"
+    if _ZONE.search(text):  # a time-zone requirement and no "anywhere": Sri Lanka's zone isn't what they mean
+        return "closed"
+    return "closed" if _PLACES.search(text) else "unsure"
 
 
 def open_to_sri_lanka(where: str, empty_ok: bool = False) -> bool:
-    """Can someone living in Sri Lanka take a job whose location restriction reads `where`?"""
-    text = " ".join(html.unescape(where or "").split())
-    if not text:
-        return empty_ok
-    if re.search(r"sri\s?lanka", text, re.I):
-        return True
-    if _BOUND.search(text) or not _WORLD.search(text):
-        return False
-    # "Worldwide, but must overlap US hours" is not open to Sri Lanka's time zone
-    return not _ZONE.search(text) or bool(_SL_ZONE.search(text))
+    """True only when the plain-text check says "open" (`eligibility`)."""
+    return eligibility(where, "open" if empty_ok else "closed") == "open"
 
 
 def _plain(text, limit: int = 600) -> str:
@@ -97,6 +122,7 @@ def _job(source: str, ident: str, title: str, url: str, company: str, where: str
 
 
 # -- providers: each returns jobs whose `location` is still the raw "who may apply" text -------------------------------------
+# (a provider that knows an empty text means "no restriction" fills in "Worldwide" itself)
 
 def remotive(conn: Http, opts: dict) -> list[Job]:
     """Remotive's free API returns the 10 newest jobs per call and asks for at most about 4 visits a day."""
@@ -112,10 +138,9 @@ def remotive(conn: Http, opts: dict) -> list[Job]:
     return out
 
 
-def remoteok(conn: Http, opts: dict) -> list[Job]:
-    data = conn.get("https://remoteok.com/api").json()
+def _remoteok_items(data) -> list[Job]:
     out = []
-    for it in data:
+    for it in data if isinstance(data, list) else []:
         if not isinstance(it, dict) or not it.get("position"):
             continue  # the first element is the legal notice
         where = it.get("location") or "Worldwide"  # Remote OK names a place only when the job is restricted
@@ -125,6 +150,15 @@ def remoteok(conn: Http, opts: dict) -> list[Job]:
         if j:
             out.append(j)
     return out
+
+
+def remoteok(conn: Http, opts: dict) -> list[Job]:
+    """The front page plus the jobs under each hardware-ish tag (the front page alone is only the newest ~100)."""
+    out = _remoteok_items(conn.get("https://remoteok.com/api").json())
+    for tag in opts.get("remoteok_tags") or ["hardware", "electronics", "embedded", "iot", "robotics", "firmware", "electrical",
+                                              "telecom", "network", "energy", "engineer"]:
+        out.extend(_remoteok_items(conn.get("https://remoteok.com/api", params={"tag": tag}).json()))
+    return list({j.source_id: j for j in out}.values())
 
 
 def weworkremotely(conn: Http, opts: dict) -> list[Job]:
@@ -147,8 +181,9 @@ def weworkremotely(conn: Http, opts: dict) -> list[Job]:
 
 
 def jobicy(conn: Http, opts: dict) -> list[Job]:
-    calls = [{"geo": "anywhere", "count": 100}, {"geo": "apac", "count": 100}] + \
-            [{"tag": q, "count": 50} for q in (opts.get("jobicy_tags") or ["embedded", "firmware", "electrical", "hardware", "pcb", "fpga"])]
+    tags = opts.get("jobicy_tags") or ["embedded", "firmware", "electrical", "hardware", "pcb", "fpga", "iot", "robotics",
+                                       "electronics", "telecom", "network"]
+    calls = [{"geo": "anywhere", "count": 100}, {"geo": "apac", "count": 100}] + [{"tag": q, "count": 50} for q in tags]
     out: list[Job] = []
     for call in calls:
         data = conn.get("https://jobicy.com/api/v2/remote-jobs", params=call).json()
@@ -160,7 +195,7 @@ def jobicy(conn: Http, opts: dict) -> list[Job]:
                                                                     it.get("salaryCurrency"), it.get("salaryPeriod")))
             if j:
                 out.append(j)
-    return out
+    return list({j.source_id: j for j in out}.values())
 
 
 def himalayas(conn: Http, opts: dict) -> list[Job]:
@@ -196,21 +231,127 @@ def workingnomads(conn: Http, opts: dict) -> list[Job]:
     return out
 
 
+def jobspresso(conn: Http, opts: dict) -> list[Job]:
+    """Jobspresso's job feed: the "creator" line reads "Company<br>⚲ Where"."""
+    root = ET.fromstring(conn.get("https://jobspresso.co/", params={"feed": "job_feed"}).text)
+    out = []
+    for it in root.iter("item"):
+        creator = it.findtext("{http://purl.org/dc/elements/1.1/}creator") or ""
+        company, _, where = re.sub(r"<br\s*/?>", "|", creator).partition("⚲")
+        company = _plain(company.replace("|", " "))
+        try:
+            posted = parsedate_to_datetime(it.findtext("pubDate") or "").date().isoformat()
+        except (TypeError, ValueError):
+            posted = ""
+        j = _job("Jobspresso", it.findtext("link"), _plain(it.findtext("title")), it.findtext("link") or "", company, _plain(where),
+                 description=_plain(it.findtext("description")), posted=posted)
+        if j:
+            out.append(j)
+    return out
+
+
+def nodesk(conn: Http, opts: dict) -> list[Job]:
+    """NoDesk's feed names no place ("Title at Company"), so what it lists is judged by the AI."""
+    root = ET.fromstring(conn.get("https://nodesk.co/remote-jobs/index.xml").text)
+    out = []
+    for it in root.iter("item"):
+        title, _, company = _plain(it.findtext("title")).rpartition(" at ")
+        j = _job("NoDesk", it.findtext("guid") or it.findtext("link"), title, it.findtext("link") or "", company, "",
+                 description=_plain(it.findtext("description")))
+        if j:
+            out.append(j)
+    return out
+
+
+_HN_ROLE = re.compile(r"engineer|developer|designer|architect|scientist|manager|lead|technician|researcher|analyst|specialist|"
+                      r"administrator|consultant|programmer|intern", re.I)
+
+
+def hn_hiring(conn: Http, opts: dict) -> list[Job]:
+    """Hacker News "Who is hiring?": every comment is an advert that starts "Company | Role | Place | REMOTE …"."""
+    root = ET.fromstring(conn.get("https://hnrss.org/whoishiring/jobs", params={"count": int(opts.get("hn_count", 100))}).text)
+    out = []
+    for it in root.iter("item"):
+        raw = html.unescape(it.findtext("description") or "")
+        paras = [p for p in re.split(r"<p>|<br\s*/?>", raw) if _plain(p)]
+        if not paras:
+            continue
+        header = _plain(paras[0], 300)
+        parts = [p.strip() for p in header.split("|")]
+        if len(parts) < 3 or not re.search(r"\bremote\b", header, re.I):
+            continue  # not an advert, or not remote
+        role = next((p for p in parts[1:] if _HN_ROLE.search(p)), parts[1])
+        where = " | ".join(p for p in parts[1:] if p is not role)
+        j = _job("HN Who is hiring", it.findtext("link"), role, it.findtext("link") or "", parts[0], where,
+                 description=_plain(" ".join(paras[1:]), 700), posted=_iso(it.findtext("pubDate")))
+        if j:
+            try:
+                j.posted = parsedate_to_datetime(it.findtext("pubDate") or "").date().isoformat()
+            except (TypeError, ValueError):
+                pass
+            out.append(j)
+    return out
+
+
+def boards(conn: Http, opts: dict) -> list[Job]:
+    """Employers' own job boards on Greenhouse, Lever and Ashby (public JSON), remote jobs only."""
+    out: list[Job] = []
+    for b in opts.get("boards") or []:
+        ats, slug, name = str(b.get("ats", "")).lower(), str(b.get("slug", "")), b.get("name") or str(b.get("slug", ""))
+        if not slug:
+            continue
+        try:
+            if ats == "greenhouse":
+                for it in conn.get(f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs").json().get("jobs") or []:
+                    where = (it.get("location") or {}).get("name") or ""
+                    if "remote" in where.lower():
+                        j = _job(name, it.get("id"), it.get("title"), it.get("absolute_url"), name, where, posted=_iso(it.get("first_published")))
+                        out.append(j) if j else None
+            elif ats == "lever":
+                for it in conn.get(f"https://api.lever.co/v0/postings/{slug}", params={"mode": "json", "limit": 200}).json() or []:
+                    where = (it.get("categories") or {}).get("location") or ""
+                    if str(it.get("workplaceType") or "").lower() == "remote" or "remote" in where.lower():
+                        j = _job(name, it.get("id"), it.get("text"), it.get("hostedUrl"), name, where or it.get("country") or "",
+                                 description=_plain(it.get("descriptionPlain")), posted=_iso(int(it.get("createdAt") or 0) // 1000))
+                        out.append(j) if j else None
+            elif ats == "ashby":
+                for it in conn.get(f"https://api.ashbyhq.com/posting-api/job-board/{slug}").json().get("jobs") or []:
+                    where = it.get("location") or ""
+                    if str(it.get("workplaceType") or "").lower() == "remote" or (it.get("isRemote") and "hybrid" not in str(it.get("workplaceType") or "").lower()):
+                        j = _job(name, it.get("id"), it.get("title"), it.get("jobUrl"), name, where,
+                                 description=_plain(it.get("descriptionPlain")), posted=_iso(it.get("publishedAt")))
+                        out.append(j) if j else None
+            else:
+                conn.note(f"{name}: unknown job board type {ats!r}")
+        except Exception as exc:  # one employer's board being down must not hide the others
+            conn.note(f"{name}: {type(exc).__name__}: {str(exc)[:60]}")
+    return out
+
+
 PROVIDERS = {"remotive": remotive, "remoteok": remoteok, "weworkremotely": weworkremotely, "jobicy": jobicy,
-             "himalayas": himalayas, "workingnomads": workingnomads}
+             "himalayas": himalayas, "workingnomads": workingnomads, "jobspresso": jobspresso, "nodesk": nodesk,
+             "hn_hiring": hn_hiring, "boards": boards}
 
 
 def fetch(http: Http, opts: dict, cfg: Config) -> list[Job]:
     names = [n for n in (opts.get("providers") or list(PROVIDERS)) if n in PROVIDERS]
-    extra = [str(x) for x in opts.get("open_to") or []]  # more words that mean "open to Sri Lanka"
+    extra = [str(x).lower() for x in opts.get("open_to") or []]  # more words that mean "open to Sri Lanka"
 
     def one(conn: Http, name: str) -> list[Job]:
         kept = []
         for job in PROVIDERS[name](conn, opts):
-            if open_to_sri_lanka(job.location) or (extra and any(w.lower() in job.location.lower() for w in extra)):
-                job.location = f"Remote – {job.location}" if job.location != "Worldwide" else "Remote – open worldwide"
-                kept.append(job)
+            state = eligibility(job.location)
+            if extra and any(w in job.location.lower() for w in extra):
+                state = "open"
+            if state == "closed":
+                continue
+            job.remote_rule = state
+            if state == "open":
+                job.location = "Remote – open worldwide" if job.location == "Worldwide" else f"Remote – {job.location}"
+            else:
+                job.location = f"Remote – {job.location}" if job.location else "Remote – place not stated"
+            kept.append(job)
         return kept
 
-    found = gather(http, names, one, workers=int(opts.get("workers", 3)), label=lambda n: n)
+    found = gather(http, names, one, workers=int(opts.get("workers", 4)), label=lambda n: n)
     return list({j.fingerprint: j for j in found}.values())  # the same job is often on several boards

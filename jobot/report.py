@@ -38,6 +38,7 @@ class Report:
     reminders: list[dict] = field(default_factory=list)  # shortlisted jobs closing soon
     at: str | None = None  # time of day, for a quick (between-digests) run: "14:30"
     missed: list[tuple[Job, str]] = field(default_factory=list)  # open jobs your own settings dropped, with the reason
+    notes: list[str] = field(default_factory=list)  # footer lines from the AI helpers
 
     # -- shared helpers ---------------------------------------------------
 
@@ -77,7 +78,7 @@ class Report:
         return f"{n} new EEE job{'s' if n != 1 else ''} in Sri Lanka – {when}"
 
     def source_summary(self) -> list[str]:
-        lines = [x for x in (self.stats_line, self.read_note, self.ai_note, self.history_note) if x]
+        lines = [x for x in (self.stats_line, self.read_note, self.ai_note, self.history_note, *self.notes) if x]
         for s in self.sources:
             if s.skipped:
                 lines.append(f"{s.name}: skipped ({s.skipped})")
@@ -108,6 +109,8 @@ class Report:
             lines.append(f"📋 {escape(job.requirements)}")
         if job.ai_score is not None:
             lines.append(f"⭐ {job.ai_score}/10 – {escape(job.ai_reason)}")
+        if job.ai_note:
+            lines.append(f"🧭 {escape(job.ai_note)}")
         if job.salary:
             lines.append(f"💰 {escape(job.salary)}")
         if job.closing:
@@ -185,6 +188,8 @@ class Report:
                     out.append(f"  Asks for: {j.requirements}")
                 if j.ai_score is not None:
                     out.append(f"  Fit: {j.ai_score}/10 – {j.ai_reason}")
+                if j.ai_note:
+                    out.append(f"  Note: {j.ai_note}")
                 if j.salary:
                     out.append(f"  Salary: {j.salary}")
                 if j.closing:
@@ -237,6 +242,8 @@ class Report:
                 salary = f" · {escape(j.salary)}" if j.salary else ""
                 fit = (f'<br><span style="color:#1a6d3d;font-size:13px">⭐ {j.ai_score}/10 – '
                        f'{escape(j.ai_reason)}</span>') if j.ai_score is not None else ""
+                if j.ai_note:
+                    fit += f'<br><span style="color:#5b4a99;font-size:13px">🧭 {escape(j.ai_note)}</span>'
                 needs = self.needs(j)
                 details = "".join(
                     f'<br><span style="color:#444;font-size:13px">{icon} {escape(text)}</span>'

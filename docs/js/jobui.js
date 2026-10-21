@@ -91,6 +91,7 @@ export function jobCard(j, { onSkill } = {}) {
   }
   if (j.requirements) card.append(el("div", { class: "line" }, el("b", {}, "Asks for: "), j.requirements));
   if (j.ai_reason) card.append(el("div", { class: "line" }, el("b", {}, "AI: "), j.ai_reason));
+  if (j.ai_note) card.append(el("div", { class: "line" }, el("b", {}, "Note: "), j.ai_note));
   const closing = closingInfo(j.closing), extra = el("div", { class: "line" + (closing?.late ? " late" : "") });
   if (closing) extra.append(closing.text);
   if (j.contact && EMAIL.test(j.contact)) { if (closing) extra.append(" · "); extra.append("apply: ", el("a", { href: "mailto:" + j.contact }, j.contact)); }

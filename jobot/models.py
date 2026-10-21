@@ -36,6 +36,8 @@ class Job:
     ai_reason: str = ""
     watched: bool = False  # the employer is on your watch list
     remote: bool = False  # a fully remote job that is open to people in Sri Lanka
+    remote_rule: str = ""  # what the plain-text check said about it: "open" or "unsure" (the AI settles those)
+    ai_note: str = ""  # why the AI let this job through / what to check ("Open to Sri Lanka: no US hours needed")
     preset: list[str] | None = field(default=None, repr=False)  # sub-fields set by the source
 
     @property
