@@ -668,7 +668,29 @@ qualifications:
 include_unknown_qualification: true
 
 # ===========================================================================
+#  HOW OFTEN, AND HOW HARD
+#  The workflow wakes up every 30 minutes (the `cron:` line in
+#  .github/workflows/daily.yml). Every run reads all the sites below at the
+#  same time. The first run after `digest_hour` (Sri Lanka time) sends the
+#  daily summary; the runs in between only message you when they find
+#  something new, and skip sites marked `every_hours:` until they are due.
+# ===========================================================================
+schedule:
+  digest_hour: 8
+  # Sites read at the same time.
+  workers: 6
+  # A site that hasn't finished after this many seconds is given up on for this run.
+  site_seconds: 240
+  # Ask a site that timed out or errored once more before giving up on it.
+  retry_failed: true
+
+# ===========================================================================
 #  4. JOB SITES
+#  Any site can have several entries: give an entry `type:` (the site's own
+#  name below), a `name:` and `every_hours:` – e.g. a fast entry for the pages
+#  that change all day and a slower one for the long tail.
+#  Entries that need a secret (`jooble`) or your mailbox (`email_alerts`) are
+#  switched off until you set them up (see the README).
 # ===========================================================================
 sources:
   topjobs:
@@ -678,6 +700,26 @@ sources:
     #   RLT R&D/Science          POS Manufacturing/Operations
     #   SQC Supervision/Quality Control
     categories: [MAE, ITT, HNS, RLT, POS, SQC]
+    # topjobs' pages are huge and slow to answer from GitHub, so they get a
+    # patient timeout and are read two at a time.
+    timeout_seconds: 90
+    workers: 2
+
+  # The other topjobs areas, a few times a day. Several of them hold EEE work
+  # the six above don't:
+  #   CCE Civil/Interior/Architecture (building services, MEP)   AIM Airline/Marine
+  #   TAL Education (lecturers, instructors)   SMM Sales/Marketing (technical sales)
+  #   MHN Medical (biomedical)   SDQ IT-Software/DB/QA/Web/GIS   AGD Agriculture/Environment
+  #   IDV International Development   COM Corporate Management   LWT Logistics/Transport
+  topjobs_more:
+    type: topjobs
+    name: topjobs.lk (other areas)
+    enabled: true
+    every_hours: 2
+    categories: [CCE, AIM, TAL, SMM, MHN, SDQ, AGD, IDV, COM, LWT]
+    timeout_seconds: 90
+    workers: 2
+    site_seconds: 480
 
   xpressjobs:
     enabled: true
@@ -708,13 +750,92 @@ sources:
       - technician-jobs
       - internships-and-trainees-jobs
       - it-and-network-industry-jobs
+      - draftsman-jobs
     max_pages: 4 # 25 ads per page
+
+  # More ikman job categories, every couple of hours.
+  ikman_more:
+    type: ikman
+    name: ikman.lk (more categories)
+    enabled: true
+    every_hours: 2
+    categories:
+      - building-construction-jobs
+      - factory-and-manufacturing-jobs
+      - production-and-operations-jobs
+      - supervisor-jobs
+      - education-and-training-jobs
+      - consultant-jobs
+    max_pages: 3
+
+  # ikman's own keyword search across ALL job ads: finds the ones filed in the
+  # wrong category.
+  ikman_search:
+    type: ikman
+    name: ikman.lk (searches)
+    enabled: true
+    every_hours: 1
+    categories: []
+    queries:
+      - electrical engineer
+      - electronic engineer
+      - engineer
+      - technical officer
+      - electrical
+      - electronic
+      - solar
+      - automation
+      - PLC
+      - telecommunication
+      - network engineer
+      - maintenance engineer
+      - site engineer
+      - project engineer
+      - instrumentation
+      - mechatronic
+      - CCTV
+      - service engineer
+      - commissioning
+      - lecturer
+    query_pages: 2
 
   rooster:
     enabled: true
     country: Sri Lanka
     queries: [electrical, electronic, engineer, engineering, automation, embedded, telecommunication, solar, intern]
     max_pages: 3 # 100 jobs per page, per query
+
+  # A longer list of searches, hourly.
+  rooster_more:
+    type: rooster
+    name: Rooster (more searches)
+    enabled: true
+    every_hours: 1
+    country: Sri Lanka
+    queries:
+      - power
+      - PLC
+      - SCADA
+      - maintenance engineer
+      - instrumentation
+      - project engineer
+      - site engineer
+      - service engineer
+      - technical officer
+      - biomedical
+      - mechatronics
+      - IoT
+      - network engineer
+      - substation
+      - HVAC
+      - building services
+      - lecturer
+      - quality engineer
+      - commissioning
+      - graduate engineer
+      - trainee engineer
+      - research assistant
+    max_pages: 2
 
   observerjobs:
     enabled: true
@@ -767,19 +888,110 @@ sources:
         company: SLT-Mobitel
         subfield: telecom
 
+  # Fully remote jobs open to people in Sri Lanka (see the note under the sources). Six free boards:
+  # Remote OK, We Work Remotely, Jobicy, Himalayas, Working Nomads (Remotive has its own entry below).
+  remote_jobs:
+    enabled: true
+    every_hours: 3
+    providers: [remoteok, weworkremotely, jobicy, himalayas, workingnomads]
+    # Extra words in a job's "who can apply" text that should count as open to you (e.g. "south asia").
+    open_to: []
+    queries: [embedded, firmware, electrical engineer, electronics engineer, hardware engineer, PCB, FPGA, power systems,
+              controls engineer, automation engineer, IoT, RF engineer, telecommunications, network engineer, solar,
+              test engineer, mechatronics, robotics]
+
+  # Remotive asks API users to call about 4 times a day, so it gets its own, slower entry.
+  remotive:
+    type: remote_jobs
+    name: Remotive
+    enabled: true
+    every_hours: 12
+    providers: [remotive]
+
+  # LinkedIn's own "remote" filter, for jobs listed in Sri Lanka.
+  linkedin_remote:
+    type: linkedin
+    name: LinkedIn (remote)
+    enabled: true
+    every_hours: 6
+    remote: true
+    location: Sri Lanka
+    keywords: [embedded engineer, firmware engineer, hardware engineer, electrical engineer, electronics engineer,
+               automation engineer, network engineer, power systems engineer, engineer]
+    posted_within_days: 14
+    delay_seconds: 6
+    retry_wait_seconds: 60
+
+  # University and institute vacancy pages (lecturer, instructor, technical
+  # officer and research posts) – found with `python -m jobot --probe`, which
+  # tries addresses from GitHub's own servers. Add more the same way.
+  university_pages:
+    type: company_pages
+    name: University vacancies
+    enabled: true
+    every_hours: 3
+    delay_seconds: 2
+    pages:
+      - {url: "https://uom.lk/vacancies", name: "Univ. of Moratuwa", company: "University of Moratuwa"}
+      - {url: "https://eng.jfn.ac.lk/", name: "Eng. Faculty, Jaffna", company: "University of Jaffna"}
+      - {url: "https://eng.pdn.ac.lk/", name: "Eng. Faculty, Peradeniya", company: "University of Peradeniya"}
+      - {url: "https://cmb.ac.lk/vacancies/", name: "Univ. of Colombo", company: "University of Colombo"}
+      - {url: "https://www.sjp.ac.lk/vacancies/", name: "Univ. of Sri Jayewardenepura", company: "University of Sri Jayewardenepura"}
+      - {url: "https://www.ou.ac.lk/home/index.php/vacancies", name: "Open University", company: "Open University of Sri Lanka"}
+      - {url: "https://www.sab.ac.lk/vacancies", name: "Sabaragamuwa Univ.", company: "Sabaragamuwa University"}
+      - {url: "https://www.wyb.ac.lk/vacancies", name: "Wayamba Univ.", company: "Wayamba University"}
+      - {url: "https://www.rjt.ac.lk/vacancies", name: "Rajarata Univ.", company: "Rajarata University"}
+      - {url: "https://www.vau.ac.lk/", name: "Univ. of Vavuniya", company: "University of Vavuniya"}
+      - {url: "https://www.esn.ac.lk/", name: "Eastern Univ.", company: "Eastern University"}
+      - {url: "https://www.jfn.ac.lk/index.php/vacancies/", name: "Univ. of Jaffna", company: "University of Jaffna"}
+
+  # Job-alert e-mails that sites send you (XpressJobs, LinkedIn, Rooster, Jobsnet,
+  # Indeed …). It reads your mailbox READ-ONLY over IMAP – only messages from the
+  # senders you list, nothing is marked read, moved or deleted. Subscribe to the
+  # alerts on each site first. Needs the IMAP_USERNAME / IMAP_PASSWORD secrets (or
+  # it reuses SMTP_USERNAME / SMTP_PASSWORD; a Gmail app password works for both).
+  email_alerts:
+    enabled: false
+    host: imap.gmail.com
+    folder: INBOX
+    days: 3
+    max_messages: 60
+    senders: [xpress.jobs, linkedin.com, rooster.jobs, jobsnet.lk, indeed.com, topjobs.lk, careerjet, jooble.org]
+
+  # Jooble gathers adverts from many sites; its free API needs a key (jooble.org/api/about)
+  # stored as the JOOBLE_API_KEY secret.
+  jooble:
+    enabled: false
+    location: Sri Lanka
+    queries: [electrical engineer, electronic engineer, automation engineer, telecommunication engineer, solar engineer, maintenance engineer]
+    max_pages: 2
+
   linkedin:
     enabled: true
     location: Sri Lanka
+    # LinkedIn limits anonymous searches, so it is only asked every few hours.
+    every_hours: 3
     keywords:
       - electrical engineer
       - electronics engineer
       - electrical and electronic engineering
       - power engineer
+      - power systems engineer
       - embedded engineer
       - automation engineer
+      - instrumentation engineer
+      - PLC engineer
+      - maintenance engineer
       - telecommunication engineer
+      - network engineer
       - solar engineer
+      - site engineer electrical
+      - commissioning engineer
+      - biomedical engineer
+      - graduate engineer
+      - trainee engineer
       - electrical engineering intern
+      - engineering intern
     posted_within_days: 7
     max_pages: 1 # 10 jobs per page, per keyword
     # LinkedIn limits anonymous searches, so go slowly and, when it says

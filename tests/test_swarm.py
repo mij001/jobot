@@ -324,3 +324,69 @@ def test_quick_report_title_has_the_time(cfg):
     assert r.title == "1 new EEE job in Sri Lanka – 21 Oct 2026, 14:43"
     r.sources = [SourceResult("S", 5, warnings=["area CCE: ReadTimeout"])]
     assert "S: 5 scanned (partly failed: area CCE: ReadTimeout)" in r.source_summary()
+
+
+# -- sites that block GitHub, pages, near misses ---------------------------------------------------------------------
+
+def test_blocked_sites_run_when_jobot_runs_on_your_own_runner(cfg, monkeypatch):
+    monkeypatch.setattr(jobot_main, "SOURCES", {"slow": Slow})
+    cfg.sources = {"x": {"type": "slow", "name": "Blocked", "skip_on_github_actions": True}}
+    jobs, [result] = jobot_main.scrape(cfg, {"GITHUB_ACTIONS": "true"})
+    assert jobs == [] and "blocks GitHub" in result.skipped
+    jobs, [result] = jobot_main.scrape(cfg, {"GITHUB_ACTIONS": "true", "JOBOT_ALLOW_BLOCKED": "1"})
+    assert len(jobs) == 1 and result.skipped is None
+
+
+class PageHttp(FakeHttp):
+    """A site with a robots.txt, a paged listing and a feed."""
+
+    def __init__(self, pages, robots=""):
+        super().__init__()
+        self.pages, self.robots, self.requested = pages, robots, []
+
+    def get(self, url, params=None, timeout=None):
+        self.requested.append((url, (params or {}).get("page")))
+        text = self.robots if url.endswith("/robots.txt") else self.pages[(url, (params or {}).get("page"))]
+
+        class R:
+            pass
+        r = R()
+        r.text = text
+        return r
+
+
+def test_pages_source_follows_robots_pages_and_feeds():
+    from jobot.sources import company_pages
+    listing = '<a href="/v/1">Lecturer in Electrical Engineering</a><a href="/v/2">Technical Officer (Electronics)</a>'
+    feed = '<?xml version="1.0"?><rss version="2.0"><channel><item><title>Electrical Engineer – Acme</title><link>https://acme.lk/j/9</link></item></channel></rss>'
+    pages = {("https://uni.lk/vacancies", None): listing, ("https://uni.lk/vacancies", 2): "<p>nothing more</p>",
+             ("https://acme.lk/feed", None): feed}
+    http = PageHttp(pages, robots="User-agent: *\nDisallow: /private/")
+    opts = {"pages": [{"url": "https://uni.lk/vacancies", "name": "University", "pages": 3}, {"url": "https://acme.lk/feed", "name": "Acme"}]}
+    jobs = company_pages.fetch(http, opts, None)
+    assert sorted(j.title for j in jobs) == ["Electrical Engineer – Acme", "Lecturer in Electrical Engineering", "Technical Officer (Electronics)"]
+    assert ("https://uni.lk/vacancies", 2) in http.requested and ("https://uni.lk/vacancies", 3) not in http.requested  # stops at an empty page
+
+    blocked = PageHttp({}, robots="User-agent: *\nDisallow: /vacancies")
+    with pytest.raises(RuntimeError, match="robots.txt"):
+        company_pages.fetch(blocked, {"pages": [{"url": "https://uni.lk/vacancies", "name": "University"}]}, None)
+    assert not [r for r in blocked.requested if not r[0].endswith("robots.txt")]  # never visited the page itself
+
+
+def test_near_misses_say_what_your_settings_dropped(cfg):
+    cfg.only_subfields(["general"])  # power & the rest off
+    cfg.only_levels(["entry", "internship"])
+    jobs = [
+        Job(source="S", source_id="1", title="Power Systems Engineer", url="https://s/1", company="Grid Co", posted="2026-10-20"),
+        Job(source="S", source_id="2", title="Senior Electrical Engineer", url="https://s/2", company="Big Co", posted="2026-10-19",
+            description="10 years of experience"),
+        Job(source="S", source_id="3", title="Electrical Engineer", url="https://s/3", company="Fits Co", posted="2026-10-21"),  # fine: sent normally
+        Job(source="S", source_id="4", title="Chef", url="https://s/4"),
+        Job(source="S", source_id="5", title="Power Systems Engineer", url="https://s/5", company="Grid Co"),  # same vacancy elsewhere
+    ]
+    missed = stats.near_misses(jobs, cfg)
+    assert [(j.source_id, why) for j, why in missed] == [
+        ("1", "Power & Energy is switched off"), ("2", "Senior level is switched off")] or \
+        [(j.source_id) for j, _ in missed] == ["1", "2"]
+    assert all(j.title != "Chef" and j.source_id != "3" for j, _ in missed) and len(missed) == 2
+    assert stats.near_misses(jobs, cfg, limit=1)[0][0].source_id == "1"  # newest first

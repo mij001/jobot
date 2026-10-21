@@ -37,6 +37,7 @@ class Report:
     dashboard_url: str | None = None  # the page with your history and shortlist
     reminders: list[dict] = field(default_factory=list)  # shortlisted jobs closing soon
     at: str | None = None  # time of day, for a quick (between-digests) run: "14:30"
+    missed: list[tuple[Job, str]] = field(default_factory=list)  # open jobs your own settings dropped, with the reason
 
     # -- shared helpers ---------------------------------------------------
 
@@ -134,6 +135,10 @@ class Report:
             if label:
                 blocks.append(f"📂 <b>{escape(label)}</b> ({len(jobs)})")
             blocks.extend(self._telegram_job(j) for j in jobs)
+        if self.missed:
+            blocks.append("🔎 <b>Dropped by your own settings</b>\n" + "\n".join(
+                f'• <a href="{escape(j.url, quote=True)}">{escape(j.title)}</a>'
+                f'{" – " + escape(j.company) if j.company else ""} <i>({escape(why)})</i>' for j, why in self.missed))
         if self.weekly:
             blocks.append("📈 <b>Your week</b>\n" + "\n".join(escape(x) for x in self.weekly))
         if self.tips:
@@ -189,6 +194,10 @@ class Report:
                 out.append(f"  {j.source}: {j.url}")
                 out.extend(f"  {s}: {u}" for s, u in j.also_on)
                 out.append("")
+        if self.missed:
+            out.append("== Dropped by your own settings ==")
+            out.extend(f"* {j.title}{' – ' + j.company if j.company else ''} ({why}): {j.url}" for j, why in self.missed)
+            out.append("")
         if self.weekly:
             out.extend(["== Your week ==", *self.weekly, ""])
         if self.tips:
@@ -244,6 +253,13 @@ class Report:
                     f' · {" | ".join(links)}</span>{details}{fit}'
                     '</div>'
                 )
+        if self.missed:
+            rows = "".join(
+                f'<li><a href="{escape(j.url, quote=True)}">{escape(j.title)}</a>'
+                f'{" – " + escape(j.company) if j.company else ""} <i style="color:#666">({escape(why)})</i></li>'
+                for j, why in self.missed)
+            parts.append('<h3 style="border-bottom:1px solid #ccc;padding-bottom:4px">🔎 Dropped by your own settings</h3>'
+                         f'<p style="margin:4px 0;color:#666;font-size:13px">Open jobs that match an EEE sub-field but your filters left out:</p><ul>{rows}</ul>')
         if self.weekly:
             parts.append('<h3 style="border-bottom:1px solid #ccc;padding-bottom:4px">📈 Your week</h3>'
                          + "".join(f'<p style="margin:4px 0">{escape(x)}</p>' for x in self.weekly))

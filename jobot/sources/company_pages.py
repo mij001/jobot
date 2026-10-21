@@ -3,7 +3,12 @@
 Each page in config.yaml (sources.company_pages.pages) is fetched, and every
 link whose text looks like a vacancy becomes a job. Give a page a `subfield`
 to tag everything found there (useful when the link only says "Technician"),
-otherwise the normal keyword matching decides.
+otherwise the normal keyword matching decides. This works for any page that
+lists vacancies – a university's vacancies page, a job board's search results –
+and a page that turns out to be an RSS/Atom feed is read as one. A page with
+`pages: 3` is read for ?page=1..3 (`page_param` renames the parameter).
+
+Pages are visited only if the site's robots.txt allows it (`respect_robots`).
 """
 
 from __future__ import annotations
@@ -17,6 +22,9 @@ from bs4 import BeautifulSoup
 from ..config import Config
 from ..http import Http
 from ..models import Job
+from ..robots import RobotsCache
+from ..swarm import gather
+from . import rss
 
 NAME = "Company pages"
 
@@ -24,7 +32,8 @@ NAME = "Company pages"
 _JOBLIKE = re.compile(
     r"\b(vacanc\w*|recruit\w*|engineers?|officers?|technicians?|technical|assistants?|managers?|"
     r"interns?|internships?|trainees?|apprentices?|operators?|executives?|supervisors?|"
-    r"superintendents?|post of|positions?)\b|\.pdf\b",
+    r"superintendents?|post of|positions?|lecturers?|instructors?|professors?|demonstrators?|"
+    r"researchers?|walk-?in|calling applications)\b|\.pdf\b",
     re.IGNORECASE,
 )
 # … and not be site furniture.
@@ -61,16 +70,27 @@ def parse(html: str, page: dict) -> list[Job]:
     return jobs
 
 
+def _is_feed(text: str) -> bool:
+    head = text[:1500].lower()
+    return "<rss" in head or "<feed" in head or ("<?xml" in head and ("<channel" in text[:4000] or "<entry" in text[:4000]))
+
+
 def fetch(http: Http, opts: dict, cfg: Config) -> list[Job]:
-    jobs: list[Job] = []
-    errors = []
-    for page in opts.get("pages") or []:
-        if not page.get("url"):
-            continue
-        try:
-            jobs.extend(parse(http.get(page["url"]).text, page))
-        except Exception as exc:  # one broken page mustn't hide the others
-            errors.append(f"{page.get('name') or page['url']}: {exc}")
-    if errors and not jobs:
-        raise RuntimeError("; ".join(errors))
-    return jobs
+    pages = [p for p in opts.get("pages") or [] if p.get("url")]
+    robots = RobotsCache() if opts.get("respect_robots", True) else None
+
+    def one(conn: Http, page: dict) -> list[Job]:
+        if robots is not None and robots.allows(conn, page["url"]) is False:
+            raise RuntimeError("its robots.txt asks automated visitors to stay away")
+        name, jobs = page.get("name") or page["url"], []
+        for n in range(1, int(page.get("pages", 1)) + 1):
+            params = {page.get("page_param") or "page": n} if n > 1 else None
+            text = conn.get(page["url"], params=params).text
+            batch = rss.parse(text, name) if _is_feed(text) else parse(text, page)
+            jobs.extend(batch)
+            if not batch:
+                break
+        return jobs
+
+    # `one` is a closure over the shared robots cache; pages are read a few at a time on separate connections
+    return gather(http, pages, one, workers=int(opts.get("workers", 4)), label=lambda p: p.get("name") or p["url"])

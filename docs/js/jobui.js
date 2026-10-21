@@ -69,6 +69,7 @@ export function jobCard(j, { onSkill } = {}) {
 
   const tags = el("div", { class: "tags" });
   const quals = (j.qualifications || []).map((k) => (cfg.qualifications?.[k]?.label || k).split(" (")[0]);
+  if (j.remote) tags.append(el("span", { class: "tag" }, "🌍 Remote"));
   if (quals.length) tags.append(el("span", { class: "tag" }, "🎓 " + quals.join(" or ")));
   if (j.level && cfg.experience_levels?.[j.level]) tags.append(el("span", { class: "tag" }, cfg.experience_levels[j.level].label));
   if (j.min_years) tags.append(el("span", { class: "tag" }, `${j.min_years}+ yrs`));

@@ -144,7 +144,8 @@ def scrape(cfg: Config, env: dict[str, str] | None = None, schedule: Schedule | 
     def work(item) -> tuple[list[Job], list[str]]:
         key, opts, module, result = item
         started = time.monotonic()
-        http = Http(delay=float(opts.get("delay_seconds", 1.0)), deadline=started + cfg.schedule.site_seconds)
+        http = Http(delay=float(opts.get("delay_seconds", 1.0)), timeout=(10, float(opts.get("timeout_seconds", 30))),
+                    deadline=started + float(opts.get("site_seconds", cfg.schedule.site_seconds)))
         found = module.fetch(http, {**opts, "_env": env}, cfg)
         log.info("%-14s %4d jobs scanned in %3.0fs%s", result.name, len(found), time.monotonic() - started,
                  f"  (partly failed: {'; '.join(http.warnings[:3])})" if http.warnings else "")
@@ -323,6 +324,7 @@ def run(argv: list[str] | None = None) -> int:
         history_note=history.note if weekly_day else None, dashboard_url=dashboard_url(env),
         weekly=(stats.week_summary(runs, cfg, today) + coach.weekly_lines(history, cfg)) if weekly_day else [],
         reminders=reminders, at=now.strftime("%H:%M") if quick else None,
+        missed=stats.near_misses(all_jobs, cfg, cfg.dropped_list) if weekly_day and cfg.dropped_list else [],
         tips=[t["text"] for t in tips if t["kind"] != "insight"][:3] if weekly_day else [],
     )
     checked = [r for r in results if not r.skipped]

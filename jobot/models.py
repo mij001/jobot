@@ -35,6 +35,7 @@ class Job:
     ai_score: int | None = None  # 0-10 from the optional AI reviewer
     ai_reason: str = ""
     watched: bool = False  # the employer is on your watch list
+    remote: bool = False  # a fully remote job that is open to people in Sri Lanka
     preset: list[str] | None = field(default=None, repr=False)  # sub-fields set by the source
 
     @property

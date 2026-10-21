@@ -13,12 +13,11 @@ from __future__ import annotations
 import re
 import time
 from pathlib import Path
-from urllib.parse import urlsplit
-from urllib.robotparser import RobotFileParser
 
 import requests
 
-from .http import USER_AGENT, Http
+from .http import Http
+from .robots import RobotsCache
 from .sources import company_pages
 from .sources.rss import parse as parse_feed
 from .swarm import parallel_map
@@ -33,18 +32,6 @@ def read_candidates(path: str | Path) -> list[str]:
         if line and line.startswith(("http://", "https://")):
             urls.append(line)
     return list(dict.fromkeys(urls))
-
-
-def robots_allows(http: Http, url: str) -> bool | None:
-    """True/False from the site's robots.txt for our user agent; None when it can't be read."""
-    parts = urlsplit(url)
-    try:
-        text = http.get(f"{parts.scheme}://{parts.netloc}/robots.txt", timeout=(6, 10)).text
-    except requests.RequestException:
-        return None
-    parser = RobotFileParser()
-    parser.parse(text.splitlines())
-    return parser.can_fetch(USER_AGENT, url)
 
 
 def probe_one(url: str) -> dict:
@@ -73,7 +60,7 @@ def probe_one(url: str) -> dict:
                 out["jobs"], out["sample"] = len(jobs), [j.title[:60] for j in jobs[:3]]
                 if re.search(r"just a moment|attention required|enable javascript|captcha", text[:4000], re.I) and not jobs:
                     out["kind"] = "challenge"  # a bot check page, not the content
-        out["robots"] = robots_allows(http, url) if resp.ok else None
+        out["robots"] = RobotsCache().allows(http, url) if resp.ok else None
     except requests.RequestException as exc:
         out["error"] = f"{type(exc).__name__}: {str(exc)[:90]}"
     out["seconds"] = round(time.monotonic() - started, 1)

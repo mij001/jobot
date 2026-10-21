@@ -81,6 +81,10 @@ def _get(http: Http, params: dict, retry_wait: float) -> str:
 
 
 def fetch(http: Http, opts: dict, cfg: Config) -> list[Job]:
+    """With `remote: true` only LinkedIn's fully-remote jobs are asked for (its "On-site / Remote" filter),
+    and only those whose listed place is open to Sri Lanka are kept and marked remote."""
+    from .remote import open_to_sri_lanka
+    remote = bool(opts.get("remote"))
     days = int(opts.get("posted_within_days", 7))
     max_pages = int(opts.get("max_pages", 1))
     retry_wait = float(opts.get("retry_wait_seconds", 60))
@@ -97,6 +101,8 @@ def fetch(http: Http, opts: dict, cfg: Config) -> list[Job]:
             }
             if f_e:
                 params["f_E"] = f_e
+            if remote:
+                params["f_WT"] = "2"  # LinkedIn's work-type code for remote
             try:
                 batch = parse(_get(http, params, retry_wait))
             except requests.RequestException as exc:
@@ -104,6 +110,10 @@ def fetch(http: Http, opts: dict, cfg: Config) -> list[Job]:
                 log.warning("LinkedIn %r page %d failed: %s", keyword, page + 1, exc)
                 break
             for job in batch:
+                if remote:
+                    if not open_to_sri_lanka(job.location):
+                        continue
+                    job.remote, job.location = True, f"Remote – {job.location}"
                 jobs.setdefault(job.source_id, job)
             if len(batch) < PAGE_SIZE:
                 break

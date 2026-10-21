@@ -1,0 +1,174 @@
+"""Fully remote jobs: who may apply, the providers' formats, and the filters."""
+
+import json
+
+import pytest
+
+from jobot import history
+from jobot.filters import select_jobs
+from jobot.models import Job
+from jobot.sources import linkedin, remote
+
+OPEN = ["Worldwide", "Anywhere in the World", "Global", "APAC", "Asia", "South Asia", "Sri Lanka", "Anywhere", "Asia-Pacific",
+        "Europe, LATAM, APAC, the U.S., Canada", "Worldwide excluding USA", "Remote – Asia (any time zone)"]
+CLOSED = ["Anywhere in India", "USA, Canada, USA timezones", "Time zone: CET (+/- 3 hours)", "Southeast Asia", "East Asia",
+          "Worldwide (must overlap US hours)", "North America", "Philippines", "Remote - India", "LATAM", "United States",
+          "Worldwide, EST time zone", "Europe", "Germany", "Japan - Remote"]
+
+
+@pytest.mark.parametrize("where", OPEN)
+def test_open_to_sri_lanka(where):
+    assert remote.open_to_sri_lanka(where)
+
+
+@pytest.mark.parametrize("where", CLOSED)
+def test_not_open_to_sri_lanka(where):
+    assert not remote.open_to_sri_lanka(where)
+
+
+def test_no_restriction_text_depends_on_the_board():
+    assert not remote.open_to_sri_lanka("") and remote.open_to_sri_lanka("", empty_ok=True)
+
+
+class FakeResp:
+    def __init__(self, body=None, text=""):
+        self._body, self.text = body, text
+
+    def json(self):
+        return self._body
+
+
+class FakeBoards:
+    """Answers each board's address with a small sample in that board's own format."""
+
+    def __init__(self):
+        self.warnings, self.requested = [], []
+
+    def clone(self):
+        return self
+
+    def note(self, message):
+        self.warnings.append(message)
+
+    def get(self, url, params=None, **kw):
+        self.requested.append((url, dict(params or {})))
+        if "remotive" in url:
+            return FakeResp({"jobs": [
+                {"id": 1, "title": "Embedded Firmware Engineer", "url": "https://remotive.com/remote-jobs/1", "company_name": "Acme",
+                 "candidate_required_location": "Worldwide", "publication_date": "2026-10-17T16:04:29", "salary": "$40k",
+                 "category": "Engineering", "description": "<p>C and <b>RTOS</b></p>"},
+                {"id": 2, "title": "Hardware Engineer", "url": "https://remotive.com/remote-jobs/2", "company_name": "Beta",
+                 "candidate_required_location": "USA, Canada, USA timezones", "publication_date": "2026-10-17T16:04:29"}]})
+        if "remoteok" in url:
+            return FakeResp([{"legal": "link back"},
+                             {"id": "9", "position": "Electronics Engineer", "company": "Gamma", "url": "https://remoteok.com/9", "location": "",
+                              "date": "2026-10-20T08:00:05+00:00", "tags": ["hardware"], "salary_min": "40000", "salary_max": "60000"},
+                             {"id": "10", "position": "Analog Designer", "company": "Delta", "url": "https://remoteok.com/10", "location": "United States"}])
+        if "weworkremotely" in url:
+            return FakeResp(text="""<?xml version="1.0"?><rss version="2.0"><channel>
+              <item><title>Epsilon: Network Engineer</title><region>Anywhere in the World</region><category>DevOps</category>
+              <pubDate>Tue, 20 Oct 2026 10:00:00 +0000</pubDate><link>https://weworkremotely.com/jobs/1</link><guid>https://weworkremotely.com/jobs/1</guid>
+              <description>&lt;p&gt;Run the &lt;b&gt;network&lt;/b&gt;&lt;/p&gt;</description></item>
+              <item><title>Zeta: Sales Lead</title><region>North America</region><link>https://weworkremotely.com/jobs/2</link></item></channel></rss>""")
+        if "jobicy" in url:
+            return FakeResp({"jobs": [
+                {"id": 5, "jobTitle": "PCB Layout Engineer", "url": "https://jobicy.com/jobs/5", "companyName": "Eta", "jobGeo": "Anywhere",
+                 "jobIndustry": ["Engineering"], "jobExcerpt": "Layout", "pubDate": "2026-10-21T04:41:14+00:00", "salaryMin": "50000",
+                 "salaryMax": "70000", "salaryCurrency": "USD", "salaryPeriod": "yearly"},
+                {"id": 6, "jobTitle": "Applied AI Engineer", "url": "https://jobicy.com/jobs/6", "companyName": "Theta", "jobGeo": "USA"}]})
+        if "himalayas" in url:
+            return FakeResp({"jobs": [
+                {"title": "FPGA Engineer", "applicationLink": "https://himalayas.app/jobs/1", "guid": "g1", "companyName": "Iota",
+                 "locationRestrictions": [], "timezoneRestrictions": [-11, 0, 5.5, 8], "pubDate": 1792578733, "excerpt": "RTL"},
+                {"title": "Embedded Developer", "applicationLink": "https://himalayas.app/jobs/2", "guid": "g2", "companyName": "Kappa",
+                 "locationRestrictions": ["United States"], "timezoneRestrictions": [-8, -5]},
+                {"title": "Firmware Engineer", "applicationLink": "https://himalayas.app/jobs/3", "guid": "g3", "companyName": "Lambda",
+                 "locationRestrictions": [], "timezoneRestrictions": [-8, -7, -6, -5]},  # open to anyone but asks for US time zones
+                {"title": "Hardware Engineer", "applicationLink": "https://himalayas.app/jobs/4", "guid": "g4", "companyName": "Mu",
+                 "locationRestrictions": "['Worldwide']", "timezoneRestrictions": "[0, 5, 6]"}]})
+        if "workingnomads" in url:
+            return FakeResp([{"url": "https://www.workingnomads.com/job/go/1/", "title": "Test Engineer", "company_name": "Nu", "location": "Global",
+                              "category_name": "Engineering", "pub_date": "2026-10-20T13:39:57-04:00"},
+                             {"url": "https://www.workingnomads.com/job/go/2/", "title": "Support", "company_name": "Xi", "location": "Time zone: CET (+/- 3 hours)"}])
+        raise AssertionError(url)
+
+
+def test_every_board_is_read_and_only_jobs_open_to_sri_lanka_stay(cfg):
+    http = FakeBoards()
+    jobs = remote.fetch(http, {"workers": 1, "queries": ["embedded"], "jobicy_tags": ["pcb"]}, cfg)
+    titles = sorted(j.title for j in jobs)
+    assert titles == ["Electronics Engineer", "Embedded Firmware Engineer", "FPGA Engineer", "Hardware Engineer", "Network Engineer",
+                      "PCB Layout Engineer", "Test Engineer"]
+    assert all(j.remote and j.location.startswith("Remote –") for j in jobs) and not http.warnings
+    by = {j.title: j for j in jobs}
+    assert by["Embedded Firmware Engineer"].source == "Remotive" and by["Embedded Firmware Engineer"].description == "C and RTOS"
+    assert by["Embedded Firmware Engineer"].posted == "2026-10-17" and by["Embedded Firmware Engineer"].location == "Remote – open worldwide"
+    assert by["Electronics Engineer"].salary == "40,000 - 60,000 USD a year" and by["Electronics Engineer"].location == "Remote – open worldwide"
+    assert by["Network Engineer"].company == "Epsilon" and by["Network Engineer"].location == "Remote – Anywhere in the World"
+    assert by["PCB Layout Engineer"].salary.startswith("50,000 - 70,000 USD") and by["PCB Layout Engineer"].category == "Engineering"
+    assert by["FPGA Engineer"].posted == "2026-10-21"
+    assert by["Hardware Engineer"].url == "https://himalayas.app/jobs/4"  # the one with a worldwide list (as text) and a usable zone list
+    assert {"search": "embedded"} in [p for u, p in http.requested if "remotive" in u]  # and the engineering category call too
+
+
+def test_a_board_that_fails_is_a_warning_not_a_lost_source(cfg):
+    class Flaky(FakeBoards):
+        def get(self, url, params=None, **kw):
+            if "himalayas" in url:
+                raise RuntimeError("boom")
+            return super().get(url, params, **kw)
+
+    http = Flaky()
+    jobs = remote.fetch(http, {"workers": 1, "queries": ["embedded"], "jobicy_tags": ["pcb"]}, cfg)
+    assert jobs and http.warnings == ["himalayas: RuntimeError: boom"]
+
+
+def test_the_same_remote_job_on_two_boards_is_one_job(cfg):
+    class Dup(FakeBoards):
+        def get(self, url, params=None, **kw):
+            if "remoteok" in url:
+                return FakeResp([{"legal": ""}, {"id": "1", "position": "Network Engineer", "company": "Epsilon", "url": "https://remoteok.com/1", "location": ""}])
+            return super().get(url, params, **kw)
+
+    jobs = remote.fetch(Dup(), {"workers": 1, "providers": ["remoteok", "weworkremotely"]}, cfg)
+    assert [j.title for j in jobs] == ["Network Engineer"]
+
+
+def test_remote_jobs_skip_the_place_filters_but_not_the_field_filters(cfg):
+    cfg.include_overseas, cfg.locations = False, ["Colombo"]
+    hw = Job(source="Remote OK", source_id="1", title="Hardware Engineer", url="https://r/1", company="Acme", location="Remote – open worldwide", remote=True)
+    chef = Job(source="Remote OK", source_id="2", title="Chef", url="https://r/2", location="Remote – open worldwide", remote=True)
+    local = Job(source="topjobs.lk", source_id="3", title="Hardware Engineer", url="https://r/3", location="Kandy")
+    assert [j.title for j in select_jobs([hw, chef, local], cfg)] == ["Hardware Engineer"]  # the Kandy job is out, the remote one is in
+    assert select_jobs([hw], cfg)[0].remote
+
+
+def test_history_marks_remote_jobs(cfg):
+    from datetime import date
+    job = Job(source="Remote OK", source_id="1", title="Hardware Engineer", url="https://r/1", remote=True)
+    assert history.job_entry(job, date(2026, 10, 21), False, cfg)["remote"] is True
+    assert "remote" not in history.job_entry(Job(source="S", source_id="2", title="Engineer", url="https://s/2"), date(2026, 10, 21), False, cfg)
+
+
+def test_linkedin_remote_mode_asks_for_remote_and_keeps_only_places_open_to_sri_lanka():
+    cards = """<li><div class="base-card" data-entity-urn="urn:li:jobPosting:1111111"><a class="base-card__full-link" href="https://www.linkedin.com/jobs/view/embedded-engineer-1111111">x</a>
+      <h3 class="base-search-card__title">Embedded Engineer</h3><h4 class="base-search-card__subtitle">Acme</h4><span class="job-search-card__location">Sri Lanka</span></div></li>
+      <li><div class="base-card" data-entity-urn="urn:li:jobPosting:2222222"><a class="base-card__full-link" href="https://www.linkedin.com/jobs/view/qa-2222222">x</a>
+      <h3 class="base-search-card__title">QA Engineer</h3><h4 class="base-search-card__subtitle">Beta</h4><span class="job-search-card__location">United States</span></div></li>"""
+
+    class FakeLinkedIn:
+        def __init__(self):
+            self.params = []
+
+        def get(self, url, params=None):
+            self.params.append(params)
+
+            class R:
+                text = cards
+            return R()
+
+    http = FakeLinkedIn()
+    jobs = linkedin.fetch(http, {"remote": True, "keywords": ["embedded engineer"], "location": "Sri Lanka"}, __import__("jobot.config", fromlist=["x"]).load_config(
+        __import__("pathlib").Path(__file__).parent / "fixtures" / "default_config.yaml"))
+    assert http.params[0]["f_WT"] == "2"
+    assert [(j.title, j.remote, j.location) for j in jobs] == [("Embedded Engineer", True, "Remote – Sri Lanka")]

@@ -140,6 +140,7 @@ class Config:
     group_by: str = "level"
     weekly_summary: str = "monday"  # weekday name, or "off"
     top_picks_score: int = 8  # AI score that makes a job a "top pick" (0 = off)
+    dropped_list: int = 8  # weekly: list this many open jobs your own settings dropped, with the reason (0 = off)
     ai: AIConfig = field(default_factory=AIConfig)
     coach: CoachConfig = field(default_factory=CoachConfig)
     schedule: ScheduleConfig = field(default_factory=ScheduleConfig)
@@ -284,6 +285,7 @@ def parse_config(raw: dict[str, Any]) -> Config:
         group_by=_choice(notify.get("group_by", "level"), GROUP_BY, "notify.group_by"),
         weekly_summary=_choice(notify.get("weekly_summary", "monday"), WEEKLY, "notify.weekly_summary"),
         top_picks_score=int(notify.get("top_picks_score", 8) or 0),
+        dropped_list=max(0, int(notify.get("dropped_list", 8) or 0)),
         ai=_parse_ai(raw.get("ai") or {}),
         coach=_parse_coach(raw.get("coach") or {}),
         schedule=_parse_schedule(raw.get("schedule") or {}),

@@ -190,6 +190,8 @@ def is_excluded(job: Job, cfg: Config) -> bool:
         return True
     if cfg.avoid_companies and matching_keywords(cfg.avoid_companies, job.company):
         return True
+    if job.remote:  # open to Sri Lanka by construction: neither the overseas nor the place filter applies
+        return False
     if not cfg.include_overseas and matching_keywords(cfg.overseas_keywords, f"{job.title}\n{job.location}"):
         return True
     if cfg.locations and job.location:

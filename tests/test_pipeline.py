@@ -174,8 +174,13 @@ def test_live_config_is_valid():
     from jobot.config import load_config
     from jobot.sources import SOURCES
     cfg = load_config(jobot_main.ROOT / "config.yaml")
-    assert set(cfg.sources) <= set(SOURCES)
+    # an entry is either a site's own name or reuses a site's code with `type:` (e.g. ikman_search -> ikman)
+    unknown = {key for key, opts in cfg.sources.items() if str(opts.get("type") or key) not in SOURCES}
+    assert not unknown, f"sources that are not a known site and have no valid type: {sorted(unknown)}"
     assert cfg.enabled_subfields and cfg.enabled_sources()
+    # a typo in a cadence would silently run a site every time or never
+    for key, opts in cfg.sources.items():
+        assert float(opts.get("every_hours", 1)) > 0, key
 
 
 PASSWORD = "correct horse battery staple"

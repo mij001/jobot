@@ -842,6 +842,16 @@ const SOURCE_INFO = {
   linkedin: ["LinkedIn", "Public search – LinkedIn limits how much GitHub's servers can see"],
   itpro: ["ITPro.lk", "IT, hardware & networking and internship ads"],
   techjobs: ["TechJobs.lk", "Engineering and technical vacancies"],
+  topjobs_more: ["topjobs.lk – other areas", "Building/civil, marine & airline, education, sales, medical and more"],
+  ikman_more: ["ikman.lk – more categories", "Construction, factory, production, supervisor, education, consultant"],
+  ikman_search: ["ikman.lk – searches", "Keyword searches across all job ads, to catch ones in the wrong category"],
+  rooster_more: ["Rooster – more searches", "A longer list of keyword searches"],
+  university_pages: ["University vacancies", "Lecturer, instructor and technical-officer posts on university pages"],
+  remote_jobs: ["Remote jobs", "Fully remote jobs open to people in Sri Lanka – Remote OK, We Work Remotely, Jobicy, Himalayas, Working Nomads"],
+  remotive: ["Remotive", "Remote jobs (Remotive asks for about 4 visits a day)"],
+  linkedin_remote: ["LinkedIn (remote)", "LinkedIn's remote filter, for jobs listed in Sri Lanka"],
+  email_alerts: ["Job-alert e-mails", "Reads the alert e-mails sites send you (read-only). Needs IMAP_USERNAME / IMAP_PASSWORD secrets – see the README"],
+  jooble: ["Jooble", "Job search engine, official API. Needs a free JOOBLE_API_KEY secret – see the README"],
 };
 const GROUP_BY = { level: "Level", qualification: "Education", subfield: "Sub-field", site: "Site", none: "None" };
 const ORDER_BY = { best_match: "Best match", newest: "Newest", closing_soon: "Closing soon", company: "Company", title: "Title" };
@@ -1189,15 +1199,18 @@ function subfieldRow(key, sf) {
 }
 
 function sourceRow(key, opts) {
-  const [title, about] = SOURCE_INFO[key] || [key, ""];
-  const sub = opts.skip_on_github_actions
-    ? "Blocks GitHub's servers – only checked when you run jobot on your own computer" : about;
+  const kind = opts.type || key;  // an entry can reuse another site's code (type:) with its own name and timetable
+  const [title0, about] = SOURCE_INFO[key] || SOURCE_INFO[kind] || [key, ""];
+  const title = opts.name || title0;
+  const sub = (opts.skip_on_github_actions
+    ? "Blocks GitHub's servers – only checked when you run jobot on your own computer" : about)
+    + (opts.every_hours ? ` · every ${opts.every_hours} h` : "");
   let panel = null, get = () => ({});
-  if (key === "linkedin") {
+  if (kind === "linkedin") {
     const kw = chipInput(opts.keywords, "Add search…", "LinkedIn searches");
     panel = el("div", {}, el("div", { class: "hint" }, "Searches (one request each – keep the list short)"), kw);
     get = () => ({ keywords: kw._values });
-  } else if (key === "rss") {
+  } else if (kind === "rss") {
     const box = el("div", {});
     const addFeed = (f = {}) => box.append(subItem([["Feed URL", "url", f.url || "", "url"], ["Name", "name", f.name || ""], ["Pages", "pages", f.pages ?? 1, "number"]]));
     (opts.feeds || []).forEach(addFeed);
@@ -1205,7 +1218,15 @@ function sourceRow(key, opts) {
     add.addEventListener("click", () => { addFeed({ pages: 1 }); paintIcons(box); markDirty(); });
     panel = el("div", {}, el("p", { class: "hint" }, "WordPress job sites usually have a feed at /feed."), box, add);
     get = () => ({ feeds: [...box.children].map((n) => n._get()).filter((f) => f.url).map((f) => ({ ...f, pages: Number(f.pages) || 1 })) });
-  } else if (key === "company_pages") {
+  } else if (kind === "email_alerts") {
+    const kw = chipInput(opts.senders, "Add a sender (domain)…", "Alert senders");
+    panel = el("div", {}, el("div", { class: "hint" }, "Only e-mails from these senders are read (read-only). Turn the switch on once the IMAP secrets are set."), kw);
+    get = () => ({ senders: kw._values });
+  } else if (Array.isArray(opts.queries)) {
+    const kw = chipInput(opts.queries, "Add a search…", "Searches");
+    panel = el("div", {}, el("div", { class: "hint" }, "Searches (one request each)"), kw);
+    get = () => ({ queries: kw._values });
+  } else if (kind === "company_pages") {
     const box = el("div", {});
     const addPage = (p = {}) => box.append(subItem([["Careers page URL", "url", p.url || "", "url"], ["Name", "name", p.name || ""],
       ["Company", "company", p.company || ""], ["Tag as sub-field (optional)", "subfield", p.subfield || "", "subfield"]]));

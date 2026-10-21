@@ -40,6 +40,37 @@ def open_jobs_by_subfield(jobs: list[Job], cfg: Config) -> tuple[Counter, Counte
     return by_subfield, level_filtered, qual_filtered
 
 
+def near_misses(jobs: list[Job], cfg: Config, limit: int = 8) -> list[tuple[Job, str]]:
+    """Open jobs your own settings dropped although they match an EEE sub-field, each with the reason –
+    so a switched-off sub-field or level can never hide postings without you knowing."""
+    everything = replace(cfg, subfields=[replace(s, enabled=True) for s in cfg.subfields])
+    out: list[tuple[Job, str]] = []
+    seen: set[str] = set()
+    for job in jobs:
+        if job.fingerprint in seen or is_excluded(job, cfg):
+            continue
+        seen.add(job.fingerprint)
+        keys = match_subfields(job, everything)
+        if not keys:
+            continue
+        on = [k for k in keys if (sf := cfg.subfield(k)) and sf.enabled]
+        if not on:
+            labels = ", ".join(sf.label for k in keys[:2] if (sf := cfg.subfield(k)))
+            out.append((job, f"{labels} is switched off"))
+            continue
+        level = classify_level(job, cfg)
+        if not level_allowed(level, cfg):
+            lv = cfg.level(level)
+            out.append((job, f"{lv.label if lv else 'that'} level is switched off"))
+            continue
+        quals = classify_qualifications(job, cfg)
+        if not qualification_allowed(quals, cfg):
+            q = cfg.qualification(quals[0]) if quals else None
+            out.append((job, f"asks for {q.short.lower() if q else 'other'} level qualifications, which you've switched off"))
+    out.sort(key=lambda pair: pair[0].posted if len(pair[0].posted) == 10 and pair[0].posted[:2] == "20" else "", reverse=True)
+    return out[:limit]
+
+
 def run_record(day: date, sources: list[SourceResult], scanned: list[Job], matched: list[Job],
                new: list[Job], shown: list[Job], cfg: Config, ai_result=None, read_stats=None) -> dict:
     by_subfield, level_filtered, qual_filtered = open_jobs_by_subfield(scanned, cfg)

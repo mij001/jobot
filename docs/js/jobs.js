@@ -16,14 +16,17 @@ export function createJobsView(root) {
   const periodField = el("label", { class: "field", style: "min-width:150px" }, period, el("span", { class: "lbl" }, "Seen in"), el("span", { class: "caret", "data-icon": "keyboard_arrow_down" }));
   const sortField = el("label", { class: "field", style: "min-width:150px" }, sort, el("span", { class: "lbl" }, "Sort"), el("span", { class: "caret", "data-icon": "keyboard_arrow_down" }));
   const closedLabel = el("label", { class: "check" }, hideClosed, " Hide closed");
+  const remoteOnly = el("input", { type: "checkbox" });
+  const remoteLabel = el("label", { class: "check" }, remoteOnly, " Remote only");
   root.append(tabs, el("div", { class: "tools" },
-    el("label", { class: "field grow" }, search, el("span", { class: "lbl" }, "Search title, company, field, skill…")), periodField, sortField, closedLabel), skillChip, list);
+    el("label", { class: "field grow" }, search, el("span", { class: "lbl" }, "Search title, company, field, skill…")), periodField, sortField, closedLabel, remoteLabel), skillChip, list);
   paintIcons(root);
 
   search.addEventListener("input", () => { ui.search = search.value; render(); });
   period.addEventListener("change", () => { ui.period = Number(period.value); saveUi(); render(); });
   sort.addEventListener("change", () => { ui.sort = sort.value; saveUi(); render(); });
   hideClosed.addEventListener("change", () => { ui.hideClosed = hideClosed.checked; saveUi(); render(); });
+  remoteOnly.addEventListener("change", () => { ui.remoteOnly = remoteOnly.checked; saveUi(); render(); });
 
   const setSkill = (skill) => { ui.skill = ui.skill === skill ? "" : skill; saveUi(); render(); };
 
@@ -37,6 +40,7 @@ export function createJobsView(root) {
       if (ui.jobsTab === "inbox" ? m : ui.jobsTab !== "all" && m !== ui.jobsTab) return false;
       if (!triaged && cutoff && j.date < cutoff) return false;
       if (!triaged && ui.hideClosed && j.closing && j.closing < today) return false;
+      if (ui.remoteOnly && !j.remote) return false;
       if (ui.skill && !(j.skills || []).includes(ui.skill)) return false;
       if (q && !words(j).some((t) => (t || "").toLowerCase().includes(q))) return false;
       return true;
@@ -53,6 +57,7 @@ export function createJobsView(root) {
     const triaged = !["inbox", "all"].includes(ui.jobsTab);
     periodField.classList.toggle("hidden", triaged); closedLabel.classList.toggle("hidden", triaged);
     period.value = String(ui.period); hideClosed.checked = ui.hideClosed; sort.value = ui.sort;
+    remoteLabel.classList.toggle("hidden", !S.jobs.some((j) => j.remote)); remoteOnly.checked = !!ui.remoteOnly;
     for (const o of sort.options) if (o.value === "match") o.disabled = !S.career;
     if (ui.sort === "match" && !S.career) { ui.sort = "importance"; sort.value = "importance"; }
     skillChip.replaceChildren(ui.skill ? (() => {

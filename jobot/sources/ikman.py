@@ -55,7 +55,8 @@ def fetch(http: Http, opts: dict, cfg: Config) -> list[Job]:
     """Job categories (a page at a time, newest first) plus keyword searches across *all* job ads – a
     search finds ads that were filed under the wrong category."""
     max_pages = int(opts.get("max_pages", 4))
-    searches = [("category", c) for c in (opts.get("categories") or ["engineer-jobs"])]
+    categories = opts["categories"] if "categories" in opts else ["engineer-jobs"]  # [] = searches only
+    searches = [("category", c) for c in (categories or [])]
     searches += [("query", q) for q in (opts.get("queries") or [])]
     search_pages = int(opts.get("query_pages", 2))
 

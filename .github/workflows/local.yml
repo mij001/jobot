@@ -1,0 +1,71 @@
+name: Blocked sites from my own computer (optional)
+
+# XpressJobs and Observer Jobs refuse connections from GitHub's servers. This workflow runs only those
+# two sites on a computer of your own (a "self-hosted runner"), where they see an ordinary home
+# connection. It does nothing until you do both of these (see the README, "Sites that block GitHub"):
+#   1. Settings -> Actions -> Runners -> New self-hosted runner, and start it on your computer;
+#   2. Settings -> Secrets and variables -> Actions -> Variables: add LOCAL_RUNNER = true.
+#
+# Safety: this workflow only runs on a timer or by hand, never for pull requests, so nobody else's code can
+# reach your computer through it. Keep it that way (and keep "Fork pull request workflows" set to require
+# approval under Settings -> Actions -> General).
+
+on:
+  schedule:
+    - cron: "7,37 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# One run at a time, shared with the main workflow, so the two never commit over each other.
+concurrency:
+  group: jobot
+  cancel-in-progress: false
+
+jobs:
+  blocked-sites:
+    if: ${{ vars.LOCAL_RUNNER == 'true' }}
+    runs-on: self-hosted
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: python -m pip install -r requirements.txt
+
+      - name: Check the blocked sites and notify
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          AI_BASE_URL: ${{ secrets.AI_BASE_URL }}
+          DASHBOARD_PASSWORD: ${{ secrets.DASHBOARD_PASSWORD }}
+          # lets the sites that say "skip_on_github_actions" run here
+          JOBOT_ALLOW_BLOCKED: "1"
+        run: python -m jobot --auto --sources xpressjobs,observerjobs
+
+      - name: Remember sent jobs
+        if: always()
+        run: |
+          if [ -n "$(git status --porcelain -- data/)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add data/
+            git commit -m "Update seen jobs [skip ci]"
+            git pull --rebase
+            git push
+          fi

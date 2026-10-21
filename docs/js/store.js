@@ -14,7 +14,7 @@ export const S = {
   subs: new Set(),
 };
 
-const DEFAULT_UI = { tab: "focus", jobsTab: "inbox", period: 30, hideClosed: true, sort: "importance", dataDays: 30, skill: "" };
+const DEFAULT_UI = { tab: "focus", jobsTab: "inbox", period: 30, hideClosed: true, remoteOnly: false, sort: "importance", dataDays: 30, skill: "" };
 export const ui = (() => {
   try { return { ...DEFAULT_UI, ...JSON.parse(localStorage.getItem("jobot.ui") || "{}"), search: "" }; }
   catch { return { ...DEFAULT_UI, search: "" }; }
