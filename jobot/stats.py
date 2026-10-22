@@ -7,8 +7,8 @@ from dataclasses import replace
 from datetime import date
 
 from .config import Config
-from .filters import (classify_level, classify_qualifications, is_excluded, level_allowed, match_subfields,
-                      qualification_allowed)
+from .filters import (classify_level, is_excluded, level_allowed, match_subfields, qualification_allowed,
+                      qualifications_with_source)
 from .models import Job
 from .report import SourceResult
 
@@ -34,8 +34,8 @@ def open_jobs_by_subfield(jobs: list[Job], cfg: Config) -> tuple[Counter, Counte
         if on and not level_allowed(level, cfg):
             level_filtered[level or "unknown"] += 1
         elif on:
-            quals = classify_qualifications(job, cfg)
-            if not qualification_allowed(quals, cfg):
+            quals, guessed = qualifications_with_source(job, cfg)
+            if not qualification_allowed(quals, cfg, guessed):
                 qual_filtered[quals[0] if quals else "unknown"] += 1
     return by_subfield, level_filtered, qual_filtered
 
@@ -63,8 +63,8 @@ def near_misses(jobs: list[Job], cfg: Config, limit: int = 8) -> list[tuple[Job,
             lv = cfg.level(level)
             out.append((job, f"{lv.label if lv else 'that'} level is switched off"))
             continue
-        quals = classify_qualifications(job, cfg)
-        if not qualification_allowed(quals, cfg):
+        quals, guessed = qualifications_with_source(job, cfg)
+        if not qualification_allowed(quals, cfg, guessed):
             q = cfg.qualification(quals[0]) if quals else None
             out.append((job, f"asks for {q.short.lower() if q else 'other'} level qualifications, which you've switched off"))
     out.sort(key=lambda pair: pair[0].posted if len(pair[0].posted) == 10 and pair[0].posted[:2] == "20" else "", reverse=True)

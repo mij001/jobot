@@ -58,7 +58,7 @@ def tier(score: int | None, hidden: bool, title: str, subfields: list[str], leve
 
 
 def importance(job: Job, cfg: Config, hidden: bool = False) -> str:
-    return tier(job.ai_score, hidden, job.title, job.subfields, job.level, job.qualifications, cfg, job.watched)
+    return tier(job.ai_score, hidden, job.title, job.subfields, job.level, [] if job.qual_guess else job.qualifications, cfg, job.watched)
 
 
 def job_entry(job: Job, day: date, hidden: bool, cfg: Config) -> dict:
@@ -66,7 +66,7 @@ def job_entry(job: Job, day: date, hidden: bool, cfg: Config) -> dict:
         "id": job.uid, "date": day.isoformat(), "status": "hidden" if hidden else "sent",
         "source": job.source, "title": job.title, "company": job.company, "location": job.location,
         "url": job.url, "also_on": [list(p) for p in job.also_on], "subfields": list(job.subfields),
-        "level": job.level, "qualifications": list(job.qualifications), "min_years": job.min_years,
+        "level": job.level, "qualifications": list(job.qualifications), "qual_guess": job.qual_guess or None, "min_years": job.min_years,
         "ai_score": job.ai_score, "ai_reason": job.ai_reason, "importance": importance(job, cfg, hidden),
         "posted": job.posted, "closing": job.closing, "requirements": job.requirements,
         "contact": job.contact, "salary": job.salary, "read_via": job.read_via, "watched": job.watched or None, "remote": job.remote or None, "ai_note": job.ai_note or None,

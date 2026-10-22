@@ -806,6 +806,9 @@ sources:
       - CCTV
       - service engineer
       - commissioning
+      - associate engineer
+      - assistant engineer
+      - graduate engineer
       - lecturer
     query_pages: 2
 
@@ -845,6 +848,9 @@ sources:
       - commissioning
       - graduate engineer
       - trainee engineer
+      - associate engineer
+      - assistant engineer
+      - junior engineer
       - research assistant
     max_pages: 2
     quick_pages: 1
@@ -1025,12 +1031,24 @@ sources:
       - trainee engineer
       - electrical engineering intern
       - engineering intern
+    # Generic titles that name no field. Plenty of real EEE vacancies are listed only like this
+    # ("Associate Engineer - TechOps", "Technical Officer telecom projects"), so they get a deeper
+    # read (broad_pages pages each); the AI triage then decides which are EEE work.
+    broad_keywords:
+      - associate engineer
+      - assistant engineer
+      - junior engineer
+      - technical officer
+      - project engineer
+      - engineer
+    broad_pages: 2
     posted_within_days: 7
     max_pages: 1 # 10 jobs per page, per keyword
     # LinkedIn limits anonymous searches, so go slowly and, when it says
     # "too many requests", wait once before trying again.
     delay_seconds: 6
     retry_wait_seconds: 60
+    site_seconds: 330 # 32 searches at 6 s each
     # LinkedIn's own experience filter is applied from your enabled levels
     # above. LinkedIn codes: 1 Internship, 2 Entry, 3 Associate,
     # 4 Mid-Senior, 5 Director, 6 Executive
@@ -1125,8 +1143,8 @@ ai:
   #   * alerts     – job-alert e-mails in a layout jobot doesn't know.
   helpers: true
   daily_budget: 30   # AI requests per day for all helpers together
-  triage_batch: 60   # job titles per triage request
-  triage_calls: 3    # most triage requests in one run
+  triage_batch: 80   # job titles per triage request
+  triage_calls: 4    # most triage requests in one run
   vet_batch: 25      # remote jobs per eligibility request
   alert_calls: 4     # most unknown alert e-mails read in one run
 

@@ -280,10 +280,14 @@ jobot notes **every** qualification an advert accepts, and sends it if any
 of them is switched on – so "BSc **or** HND in Electrical Engineering" reaches
 a degree holder, while "NDT/HND only" adverts don't. NVQ levels are recognised
 however they're written ("NVQ L5", "NVQ Level 05", "NVQ 5/6"). `title_hints`
-are used only when the advert itself doesn't say (an unreadable "Technical
-Officer" poster is almost always diploma level). Jobs hidden by this filter
-aren't marked as sent, so switching on *Diploma* later shows the ones still
-open.
+are used only when the advert itself doesn't say, and then only as a **guess**:
+the job is shown as "Diploma (guessed from the title)" and counts as *not
+stated*, so it is not dropped. (A LinkedIn card has nothing but a title, and
+"Technical Officer telecom projects" is not necessarily a diploma job.) Only
+what the advert really says – "HND only" – hides a job. With
+`include_unknown_qualification: false` a guess does count. Jobs hidden by this
+filter aren't marked as sent, so switching on *Diploma* later shows the ones
+still open.
 
 ### Reading the adverts
 
@@ -500,7 +504,7 @@ or `daily` / `off`) adds the "Your week" block and suggestions, and
   areas, including the ones EEE work hides in (civil/building services, airline &
   marine, education, sales, medical); ikman – 11 job categories **plus 20
   keyword searches across all ads**, which finds jobs filed under the wrong
-  category; Rooster – 31 searches; LinkedIn – 20 searches; ITPro.lk, TechJobs.lk,
+  category; Rooster – 31 searches; LinkedIn – 20 searches plus 6 generic titles read two pages deep; ITPro.lk, TechJobs.lk,
   LankaJobs, FindMyJob.lk, Gazette.lk; CEB and SLT-Mobitel; twelve **university
   vacancy pages** (lecturer, instructor, technical-officer posts); and
   [fully remote jobs](#fully-remote-jobs) (ten feeds and hardware employers' boards).
@@ -518,6 +522,31 @@ or `daily` / `off`) adds the "Your week" block and suggestions, and
   and reports which ones answer, are feeds, hold vacancy links, or ask robots
   not to visit (`robots.txt`). Pages you add under `sources.company_pages.pages`
   are only visited when their `robots.txt` allows it.
+
+### A posting you saw never arrived
+
+Every site goes through the same checks, so one question finds the cause:
+
+```
+python -m jobot --explain "Technical Officer telecom projects | Luminex PLC | Jaffna"
+```
+
+It prints what each step decided – excluded word or employer, sub-field (and
+which switched-off sub-field it would match), level, qualification (stated or
+only guessed from the title) – and ends with KEPT, DROPPED or NOT MATCHED. Three
+things used to lose postings, and are fixed:
+
+* **A guess hid a match.** "Technical Officer" made a telecom job a diploma job,
+  which is switched off; see [Qualification](#qualification-degree--diploma).
+* **Titles that name no field** ("Associate Engineer - TechOps", "Associate
+  Engineer – Platform SRE") match no keyword. They go to the AI triage, which now
+  asks about engineer roles first (a long queue of technician and executive titles
+  used to starve them), and any associate / graduate / trainee / junior /
+  assistant engineer role is **kept even when the AI is out of quota**, with the
+  note "check it suits EEE".
+* **The search never asked for them.** LinkedIn only searched EEE titles; it now
+  also reads generic ones (`linkedin.broad_keywords`, two pages each), and
+  Rooster and ikman search "associate / assistant / junior engineer" too.
 
 ### Fully remote jobs
 

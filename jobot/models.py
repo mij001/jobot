@@ -30,6 +30,7 @@ class Job:
     subfields: list[str] = field(default_factory=list)
     level: str | None = None
     qualifications: list[str] = field(default_factory=list)  # e.g. ["degree", "diploma"]
+    qual_guess: bool = False  # `qualifications` is only a guess from the job title (the advert doesn't say)
     min_years: int | None = None  # "N years experience" found in the advert
     also_on: list[tuple[str, str]] = field(default_factory=list)  # (source, url) duplicates
     ai_score: int | None = None  # 0-10 from the optional AI reviewer

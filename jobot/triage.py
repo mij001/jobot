@@ -38,6 +38,7 @@ from .schedule import Schedule
 log = logging.getLogger(__name__)
 
 KEEP_DAYS = 45  # remembered answers older than this are forgotten (a re-post is judged again)
+DECISIONS_VERSION = "2"  # bumped when the triage prompt changes: the "no" answers of an older prompt are asked again
 
 # A cheap pre-filter, so the AI is only asked about jobs that could plausibly be EEE work.
 _ENGINEERISH = re.compile(r"\b(?:engineer\w*|technician|technical|trainee|apprentice|lecturer|instructor|supervisor|specialist|"
@@ -52,6 +53,32 @@ _SOFTWARE = re.compile(r"\b(?:software|developer|devops|front[\s-]?end|back[\s-]
 _HARDWAREISH = re.compile(r"\b(?:electr\w*|embedded|firmware|hardware|pcb|fpga|power|telecom\w*|network\w*|instrument\w*|"
                           r"automation|control\w*|plc|scada|solar|substation|mechatronic\w*|robot\w*|rf|signal|"
                           r"maintenance|commissioning|technical officer|technician)\b", re.I)
+
+
+# "Associate Engineer", "Graduate Engineer", "Trainee Engineer" …: the usual way fresh graduates of any engineering degree are
+# hired. The title names no field, so keywords can't place it – and the AI may be unavailable, so these are kept anyway.
+_ENTRY_ENGINEER = re.compile(r"\b(?:associate|graduate|trainee|junior|assistant|entry[\s-]level|fresh(?:er)?|intern(?:ship)?)\b"
+                             r"[^|,(]{0,40}\bengineer\w*|\bengineer\w*[^|,(]{0,20}\b(?:trainee|graduate|intern(?:ship)?)\b", re.I)
+
+
+# Another branch of engineering named in the title: the entry-level fallback leaves those to the AI.
+_OTHER_BRANCH = re.compile(r"\b(?:civil|structural|mechanical|quantity|surveyor|architect\w*|chemical|agricultur\w*|textile|garment|"
+                           r"apparel|production|quality|safety|environmental|geotechnical|piping|process|industrial|food|marine "
+                           r"(?!electr))", re.I)
+
+
+def entry_level_engineer(job: Job) -> bool:
+    """An associate / graduate / trainee … engineer title that names no other branch of engineering."""
+    return bool(_ENTRY_ENGINEER.search(job.title)) and not _OTHER_BRANCH.search(job.title)
+
+
+def priority(job: Job) -> int:
+    """Who is asked first when there are more candidates than one run can ask about (lower = sooner): engineer roles
+    – above all the entry-level ones keywords can't place – before technicians and the many generic officer / executive
+    titles, so the generic-titled jobs that matter are never starved by a long queue."""
+    text = f"{job.title} {job.category}"
+    score = 0 if entry_level_engineer(job) else 2 if re.search(r"\bengineer", job.title, re.I) else 4
+    return score + (0 if _HARDWAREISH.search(text) else 1)
 
 
 def worth_asking(job: Job) -> bool:
@@ -71,12 +98,17 @@ class Decisions:
     def __init__(self, path: str | Path):
         self.path = Path(path)
         self.entries: dict[str, str] = {}
+        stale = False
         if self.path.exists():
             try:
-                self.entries = {str(k): str(v) for k, v in json.loads(self.path.read_text(encoding="utf-8") or "{}").items()}
+                raw = {str(k): str(v) for k, v in json.loads(self.path.read_text(encoding="utf-8") or "{}").items()}
+                stale = raw.pop("_version", "") != DECISIONS_VERSION
+                self.entries = raw
             except ValueError:
                 log.warning("%s is damaged – starting fresh", self.path)
-        self._saved = dict(self.entries)
+        if stale:  # answers given under an older, stricter prompt: keep the "yes", ask the "no" again
+            self.entries = {k: v for k, v in self.entries.items() if v.startswith("y:") or k.startswith("mail:")}
+        self._saved = None if stale else dict(self.entries)  # None: the file is rewritten even if nothing else changes
 
     def get(self, uid: str) -> tuple[bool, str] | None:
         raw = self.entries.get(uid)
@@ -97,7 +129,7 @@ class Decisions:
         if self.entries == self._saved:
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        rows = [f"{json.dumps(k)}: {json.dumps(v)}" for k, v in sorted(self.entries.items())]
+        rows = [f"{json.dumps(k)}: {json.dumps(v)}" for k, v in sorted({**self.entries, "_version": DECISIONS_VERSION}.items())]
         self.path.write_text("{\n" + ",\n".join(rows) + "\n}\n", encoding="utf-8")
         self._saved = dict(self.entries)
 
@@ -113,7 +145,14 @@ For each one decide whether an EEE graduate would plausibly apply: electrical, e
 automation / instrumentation, embedded / hardware, IT hardware and networks, electrical maintenance, commissioning or
 testing, technical sales or teaching in those fields - including generic titles ("Technical Officer", "Project Engineer",
 "Trainee Engineer") when the company or snippet points to such work. Say no for clearly unrelated work: civil or mechanical
-only, software only, sales, accounting, drivers, clerical, hospitality and so on. When it is plausible but unclear, say yes.
+only, software development only, sales, accounting, drivers, clerical, hospitality and so on. When it is plausible but unclear,
+say yes.
+
+Graduate-level engineer roles whose title names no field ("Associate Engineer", "Graduate / Trainee / Junior / Assistant
+Engineer", "Engineer - TechOps") are how engineering graduates of any branch are hired: say yes to them, including IT
+infrastructure, operations, network and reliability (SRE / NOC / platform) roles, which EEE graduates commonly take (use the
+networking sub-field for those, "general" when nothing fits better). Technical-officer and technician roles are yes when they
+concern electrical, electronic or telecom systems.
 
 The sub-fields you may use for "field" (key: meaning):
 {fields}
@@ -161,6 +200,7 @@ class Outcome:
     fresh_rescued: int = 0  # ... of which decided in this run
     rejected: set[str] = field(default_factory=set)  # uids the AI turned down
     asked: int = 0  # jobs put to the AI this run
+    unchecked: int = 0  # entry-level engineer jobs kept although the AI didn't answer about them
     vetoed: dict[str, str] = field(default_factory=dict)  # remote uid -> why it was dropped
     vetted: int = 0
     notes: list[str] = field(default_factory=list)  # lines for the message footer
@@ -230,7 +270,7 @@ class Helpers:
                 self._rescue(job, known[1], fields)
             else:
                 self.out.rejected.add(job.uid)
-        todo.sort(key=lambda j: not _HARDWAREISH.search(f"{j.title} {j.category}"))  # likelier ones first
+        todo.sort(key=priority)  # likelier ones first: a long queue must not starve the jobs that matter
         if todo and self.on:
             label = "\n".join(f"{k}: {v}" for k, v in fields.items())
             system = TRIAGE_PROMPT.format(fields=label)
@@ -255,15 +295,27 @@ class Helpers:
                         self.out.fresh_rescued += 1
                     else:
                         self.out.rejected.add(job.uid)
+        # Whatever the AI didn't get to (no key, no quota left, queue too long) and is an entry-level engineer role is kept
+        # anyway, marked as unchecked: it is far worse to lose "Associate Engineer" jobs than to show a few extra ones.
+        for job in todo:
+            if self.decisions.get(job.uid) is None and entry_level_engineer(job):
+                sub = "general" if "general" in fields else ""
+                self._rescue(job, sub, fields, "", unchecked=True)
+                self.out.unchecked += 1
         if self.out.asked:
             self.out.notes.append(f"AI triage: looked at {self.out.asked} job(s) the keywords didn't place and picked "
                                   f"{self.out.fresh_rescued}")
+        if self.out.unchecked:
+            self.out.notes.append(f"{self.out.unchecked} associate / graduate engineer job(s) kept without an AI check")
         self.decisions.prune(self.today)
         return self.out
 
-    def _rescue(self, job: Job, sub: str, fields: dict[str, str], why: str = "") -> None:
+    def _rescue(self, job: Job, sub: str, fields: dict[str, str], why: str = "", unchecked: bool = False) -> None:
         job.preset = [sub] if sub else []
-        job.ai_note = ("Picked by the AI (keywords missed it): " + why) if why else "Picked by the AI (keywords missed it)"
+        if unchecked:
+            job.ai_note = "Associate / graduate engineer role: the title names no field, so check it suits EEE"
+        else:
+            job.ai_note = ("Picked by the AI (keywords missed it): " + why) if why else "Picked by the AI (keywords missed it)"
         self.out.rescued += 1
 
     # -- remote jobs ---------------------------------------------------------------------------------------------

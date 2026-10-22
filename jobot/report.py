@@ -61,7 +61,7 @@ class Report:
         """"Degree or Diploma · 2+ yrs · read from poster" """
         parts = []
         if job.qualifications:
-            parts.append(self.cfg.qualification_label(job.qualifications))
+            parts.append(self.cfg.qualification_label(job.qualifications) + (" (guessed from the title)" if job.qual_guess else ""))
         if job.min_years:
             parts.append(f"{job.min_years}+ yrs experience")
         via = [w for w in ("poster", "pdf", "ai") if w in job.read_via.split("+")]

@@ -71,7 +71,7 @@ def group_jobs(jobs: list[Job], cfg: Config, today: date) -> list[tuple[str | No
         order = [q.key for q in cfg.qualifications] + [""]
         labels = {q.key: q.label for q in cfg.qualifications} | {"": "Qualification not stated"}
         for j in jobs:
-            buckets.setdefault(j.qualifications[0] if j.qualifications else "", []).append(j)
+            buckets.setdefault(j.qualifications[0] if j.qualifications and not j.qual_guess else "", []).append(j)
     elif group_by == "subfield":
         order = [sf.key for sf in cfg.subfields] + [""]
         labels = {sf.key: sf.label for sf in cfg.subfields} | {"": "Other"}

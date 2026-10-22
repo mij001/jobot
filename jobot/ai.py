@@ -232,7 +232,7 @@ def is_hidden(job: Job, cfg: Config) -> bool:
     if job.ai_score is None:
         return False
     return (job.ai_score < cfg.ai.min_score or not level_allowed(job.level, cfg)
-            or bool(job.qualifications) and not qualification_allowed(job.qualifications, cfg))
+            or bool(job.qualifications) and not qualification_allowed(job.qualifications, cfg, job.qual_guess))
 
 
 def poster_reader(cfg: Config, env: dict[str, str], post=requests.post,
@@ -353,8 +353,8 @@ def _review(jobs, cfg, env, post, sleep, profile_extra="") -> ReviewResult:
             if job.level is None and level in level_keys:
                 job.level = level
             quals = row.get("qualification")
-            if not job.qualifications and isinstance(quals, list):
-                job.qualifications = [k for k in qual_keys if k in quals]
+            if (not job.qualifications or job.qual_guess) and isinstance(quals, list) and (picked := [k for k in qual_keys if k in quals]):
+                job.qualifications, job.qual_guess = picked, False  # the AI read the text: better than a title guess
             if requirements := str(row.get("requirements") or "").strip():
                 job.requirements = requirements[:160]
             result.scored += 1

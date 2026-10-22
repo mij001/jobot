@@ -420,3 +420,184 @@ def test_budget_zero_still_runs_with_plain_rules(tmp_path, cfg):
     h = make_helpers(cfg, tmp_path, FakeAI(triage_rule=lambda it: pytest.fail("no budget")), budget=0)
     out = h.triage([job("Technical Officer")], [])
     assert not out.rescued and any("budget is used up" in n for n in out.notes)
+
+
+# -- the LinkedIn posts that were missed ---------------------------------------------------------------------------------
+
+LINKEDIN_MISSES = [("Associate Engineer - TechOps", "CodeGen International", "Colombo (On-site)"),
+                   ("Associate Engineer – Platform SRE", "LSEG", "Colombo (Hybrid)"),
+                   ("Technical Officer telecom projects", "Luminex PLC", "Jaffna District (On-site)")]
+
+
+def linkedin_posts():
+    return [Job(source="LinkedIn", source_id=str(i), title=t, url=f"https://www.linkedin.com/jobs/view/{i}/", company=c, location=l)
+            for i, (t, c, l) in enumerate(LINKEDIN_MISSES, 1)]
+
+
+def test_a_matched_job_is_not_hidden_by_a_guess_from_its_title(cfg):
+    """"Technical Officer telecom projects" matched telecom, but "technical officer" made it a diploma job (switched off)."""
+    from jobot.filters import select_jobs
+    tech = linkedin_posts()[2]
+    assert select_jobs([tech], cfg) == [tech]
+    assert tech.subfields == ["telecom"] and tech.qualifications == ["diploma"] and tech.qual_guess
+
+    # ... but when the advert itself asks for a diploma, the filter still applies
+    strict = Job(source="topjobs.lk", source_id="9", title="Technical Officer - Telecom", url="https://t/9",
+                 description="Applicants must hold an HND in Telecommunication Engineering")
+    assert select_jobs([strict], cfg) == [] and not strict.qual_guess
+
+
+def test_a_title_guess_counts_when_unstated_qualifications_are_not_wanted(cfg):
+    from jobot.filters import select_jobs
+    cfg.include_unknown_qualification = False
+    assert select_jobs([linkedin_posts()[2]], cfg) == []
+
+
+def test_ai_does_not_hide_a_job_for_a_guessed_qualification(cfg):
+    from jobot import ai
+    j = job("Technical Officer telecom projects")
+    j.ai_score, j.level, j.qualifications, j.qual_guess = 7, "entry", ["diploma"], True
+    assert not ai.is_hidden(j, cfg)
+    j.qual_guess = False
+    assert ai.is_hidden(j, cfg)  # the advert really asks for a diploma
+
+
+def test_entry_level_engineer_titles_are_kept_even_when_the_ai_cannot_answer(cfg, tmp_path):
+    posts = linkedin_posts()[:2] + [job("Associate Software Engineer"), job("Senior Associate Engineer Civil"), job("Sales Executive")]
+    for env in ({}, ENV):  # no key at all / a key but a garbled answer
+        h = make_helpers(cfg, tmp_path / ("a" if env else "b"), FakeAI(), env=env)
+        (tmp_path / ("a" if env else "b")).mkdir(exist_ok=True)
+        out = h.triage(posts, [])
+        assert out.rescued >= 2 and posts[0].preset == ["general"] and posts[1].preset == ["general"]
+        assert "check it suits EEE" in posts[0].ai_note
+        assert not posts[2].preset and not posts[4].preset  # software development / sales: not guessed
+        assert h.decisions.get(posts[0].uid) is None  # not remembered: the AI still gets to decide later
+
+
+def test_an_ai_no_beats_the_entry_level_fallback(cfg, tmp_path):
+    post = linkedin_posts()[1]
+    h = make_helpers(cfg, tmp_path, FakeAI(triage_rule=lambda it: {"id": it["id"], "relevant": False}))
+    out = h.triage([post], [])
+    assert post.uid in out.rejected and not post.preset and not out.unchecked
+
+
+def test_generic_engineer_jobs_are_asked_before_the_long_tail(cfg, tmp_path):
+    """A long queue of technician / officer titles must not starve "Associate Engineer"."""
+    cfg.ai.triage_batch, cfg.ai.triage_calls = 5, 1
+    noise = [job(f"Maintenance Technician {i}", source="topjobs.lk") for i in range(30)] + \
+            [job(f"Executive Officer {i}", source="topjobs.lk") for i in range(30)]
+    posts = linkedin_posts()[:2]
+    fake = FakeAI(triage_rule=lambda it: {"id": it["id"], "relevant": True, "field": "networking", "why": "ok"})
+    h = make_helpers(cfg, tmp_path, fake)
+    h.triage(noise + posts, [])
+    asked = [i["title"] for _, items in fake.calls for i in items]
+    assert len(asked) == 5 and {p.title for p in posts} <= set(asked)
+    assert posts[0].preset == ["networking"] and "Picked by the AI" in posts[0].ai_note
+
+
+def test_triage_priority_order():
+    ranked = sorted([job("Executive Officer"), job("Maintenance Technician"), job("Project Engineer"),
+                     job("Associate Engineer - TechOps"), job("Embedded Associate Engineer")], key=triage.priority)
+    assert [j.title for j in ranked[:2]] == ["Embedded Associate Engineer", "Associate Engineer - TechOps"]
+    assert ranked[-1].title == "Executive Officer"
+
+
+def test_the_stricter_prompts_no_answers_are_asked_again(tmp_path):
+    path = tmp_path / "d.json"
+    path.write_text('{\n"topjobs.lk:1": "n:20261001",\n"topjobs.lk:2": "y:power:20261001",\n"mail:abc": "n:20261001"\n}\n', encoding="utf-8")
+    d = triage.Decisions(path)  # no "_version": written by the first prompt
+    assert d.get("topjobs.lk:1") is None and d.get("topjobs.lk:2") == (True, "power") and d.get("mail:abc") is not None
+    d.save()  # rewritten even though nothing was added, now with the version
+    assert '"_version": "2"' in path.read_text(encoding="utf-8")
+    again = triage.Decisions(path)
+    assert again.get("topjobs.lk:2") == (True, "power") and again.get("topjobs.lk:1") is None
+    again.put("topjobs.lk:1", False, "", TODAY)
+    again.save()
+    assert triage.Decisions(path).get("topjobs.lk:1") == (False, "")  # a new "no" is kept
+
+
+def test_linkedin_reads_generic_titles_deeper(cfg):
+    from jobot.sources import linkedin
+
+    class Http_:
+        def __init__(self):
+            self.calls = []
+
+        def get(self, url, params=None, **kw):
+            self.calls.append((params["keywords"], params["start"]))
+
+            class R:
+                text = "".join(f'<div class="base-card" data-entity-urn="urn:li:jobPosting:{params["start"] + i}{len(self.calls)}">'
+                               f'<a class="base-card__full-link" href="https://x/y"></a><h3 class="base-search-card__title">T{i}</h3></div>'
+                               for i in range(10))
+            R.self = self
+            return R()
+
+    http = Http_()
+    linkedin.fetch(http, {"keywords": ["electrical engineer"], "broad_keywords": ["associate engineer"], "broad_pages": 2,
+                          "max_pages": 1, "location": "Sri Lanka"}, cfg)
+    assert http.calls == [("electrical engineer", 0), ("associate engineer", 0), ("associate engineer", 10)]
+
+
+def test_run_sends_the_three_missed_linkedin_posts_without_any_ai_key(tmp_path, monkeypatch):
+    """Regression for the posts the bot did not find: no keyword names a field, and no AI is available at all."""
+    from pathlib import Path
+
+    import yaml
+
+    class LinkedIn:
+        NAME = "LinkedIn"
+
+        @staticmethod
+        def fetch(http, opts, cfg):
+            return linkedin_posts() + [Job(source="LinkedIn", source_id="99", title="Marketing Executive", url="https://l/99", company="X")]
+
+    sent = []
+
+    class Channel:
+        @staticmethod
+        def send(report, env):
+            sent.append(report)
+
+    monkeypatch.delenv("AI_API_KEY", raising=False)
+    monkeypatch.delenv("AI_BASE_URL", raising=False)
+    monkeypatch.setattr(jobot_main, "SOURCES", {"linkedin": LinkedIn})
+    monkeypatch.setattr(jobot_main.notifiers, "configured_channels", lambda env: {"fake": Channel})
+    config = tmp_path / "config.yaml"
+    raw = yaml.safe_load((Path(__file__).parent / "fixtures" / "default_config.yaml").read_text(encoding="utf-8"))
+    raw["sources"] = {"linkedin": {}}
+    config.write_text(yaml.safe_dump(raw, sort_keys=False, allow_unicode=True), encoding="utf-8")
+
+    assert jobot_main.run(["--config", str(config), "--state", str(tmp_path / "seen.json"), "--no-read"]) == 0
+    by = {j.title: j for j in sent[0].jobs}
+    assert set(by) == {t for t, _, _ in LINKEDIN_MISSES}
+    assert by["Technical Officer telecom projects"].qual_guess and "guessed from the title" in sent[0].email_text()
+    assert "check it suits EEE" in by["Associate Engineer - TechOps"].ai_note
+
+
+def test_explain_says_where_a_job_is_lost(cfg):
+    from jobot import filters
+    kept = filters.explain(linkedin_posts()[2], cfg)
+    assert kept[-1] == "KEPT" and any("only guessed from the title" in l for l in kept)
+    assert filters.explain(linkedin_posts()[0], cfg)[-1].startswith("NOT MATCHED")
+    assert filters.explain(job("Marketing Executive"), cfg)[-1].startswith("DROPPED")
+    hnd = Job(source="x", source_id="1", title="Technical Officer - Telecom", url="u", description="HND only")
+    assert filters.explain(hnd, cfg)[-1].startswith("DROPPED: the advert asks for a qualification")
+    senior = job("Senior Telecom Engineer 10 years experience")
+    assert "level" in " ".join(filters.explain(senior, cfg))
+
+
+def test_explain_command_prints_the_verdict(capsys):
+    assert jobot_main.run(["--explain", "Technical Officer telecom projects | Luminex PLC | Jaffna"]) == 0
+    out = capsys.readouterr().out
+    assert "Luminex PLC" in out and "KEPT" in out
+
+
+@pytest.mark.parametrize("title,expected", [
+    ("Associate Engineer - TechOps", True), ("Associate Engineer – Platform SRE", True), ("Graduate Trainee Engineer", True),
+    ("Junior Engineer", True), ("Engineering Intern", True), ("Trainee Engineer - Telecom", True),
+    ("Assistant Engineer - Civil", False), ("Assistant Engineer (Mechanical)", False), ("Trainee Engineer - Quantity Surveying", False),
+    ("Junior Engineer Structural", False), ("Trainee Engineer (Production)", False), ("Marketing Executive", False),
+])
+def test_entry_level_engineer_fallback_leaves_other_branches_to_the_ai(title, expected):
+    assert triage.entry_level_engineer(job(title)) is expected

@@ -1208,8 +1208,10 @@ function sourceRow(key, opts) {
   let panel = null, get = () => ({});
   if (kind === "linkedin") {
     const kw = chipInput(opts.keywords, "Add search…", "LinkedIn searches");
-    panel = el("div", {}, el("div", { class: "hint" }, "Searches (one request each – keep the list short)"), kw);
-    get = () => ({ keywords: kw._values });
+    const broad = chipInput(opts.broad_keywords || [], "Add a generic title…", "Generic titles");
+    panel = el("div", {}, el("div", { class: "hint" }, "Searches for EEE job titles (one request each – keep the list short)"), kw,
+      el("div", { class: "hint" }, "Generic titles that name no field (read deeper; the AI sorts out which are EEE work)"), broad);
+    get = () => ({ keywords: kw._values, broad_keywords: broad._values });
   } else if (kind === "rss") {
     const box = el("div", {});
     const addFeed = (f = {}) => box.append(subItem([["Feed URL", "url", f.url || "", "url"], ["Name", "name", f.name || ""], ["Pages", "pages", f.pages ?? 1, "number"]]));

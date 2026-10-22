@@ -122,8 +122,8 @@ class AIConfig:
     # that counts against a small daily budget; without a key or budget the plain rules are used instead.
     helpers: bool = True
     daily_budget: int = 30  # requests per day (Gemini's free tier is small: keep this modest)
-    triage_batch: int = 60  # job titles per triage request
-    triage_calls: int = 3  # most triage requests in one run
+    triage_batch: int = 80  # job titles per triage request
+    triage_calls: int = 4  # most triage requests in one run
     vet_batch: int = 25  # remote jobs per eligibility request
     alert_calls: int = 4  # most job-alert e-mails the AI reads per run (only ones in a layout the plain parser doesn't know)
 
@@ -367,8 +367,8 @@ def _parse_ai(body: dict[str, Any]) -> AIConfig:
         requests_per_minute=_opt_int(body.get("requests_per_minute"), "ai.requests_per_minute") or 8,
         helpers=bool(body.get("helpers", True)),
         daily_budget=max(0, _opt_int(body.get("daily_budget", 30), "ai.daily_budget") or 0),
-        triage_batch=min(120, max(5, _opt_int(body.get("triage_batch", 60), "ai.triage_batch") or 60)),
-        triage_calls=min(10, max(0, _opt_int(body.get("triage_calls", 3), "ai.triage_calls") or 0)),
+        triage_batch=min(120, max(5, _opt_int(body.get("triage_batch", 80), "ai.triage_batch") or 80)),
+        triage_calls=min(10, max(0, _opt_int(body.get("triage_calls", 4), "ai.triage_calls") or 0)),
         vet_batch=min(60, max(3, _opt_int(body.get("vet_batch", 25), "ai.vet_batch") or 25)),
         alert_calls=min(20, max(0, _opt_int(body.get("alert_calls", 4), "ai.alert_calls") or 0)),
     )

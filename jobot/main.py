@@ -14,7 +14,7 @@ import time
 
 import requests
 
-from . import ai, coach, notifiers, postings, stats, suggestions, triage
+from . import ai, coach, filters, notifiers, postings, stats, suggestions, triage
 from .history import History
 from .config import GROUP_BY, ORDER_BY, Config, ConfigError, load_config
 from .filters import select_jobs
@@ -70,6 +70,9 @@ def build_parser() -> argparse.ArgumentParser:
                         "the runs in between only message you when they find new jobs")
     p.add_argument("--no-read", action="store_true",
                    help="don't open the job adverts themselves (posters, PDFs) this run")
+    p.add_argument("--explain", metavar="TITLE",
+                   help='say why a job would be kept or dropped, e.g. --explain "Technical Officer | Luminex PLC | Jaffna" '
+                        "(title, then optionally company and place, separated by |), then exit")
     p.add_argument("--list", action="store_true", help="show sub-fields, levels and sources, then exit")
     p.add_argument("-v", "--verbose", action="store_true")
     return p
@@ -212,6 +215,16 @@ def dashboard_url(env: dict[str, str]) -> str | None:
     return f"https://{owner}.github.io/{repo}/" if owner and repo else None
 
 
+def run_explain(cfg: Config, text: str) -> int:
+    """`--explain "Title | Company | Place"`: walk one job through the filters and print what each step decided."""
+    title, company, place = ([p.strip() for p in text.split("|")] + ["", ""])[:3]
+    job = Job(source="explain", source_id="1", title=title, url="", company=company, location=place)
+    print(f"{title}" + (f" · {company}" if company else "") + (f" · {place}" if place else ""))
+    for line in filters.explain(job, cfg):
+        print("  " + line)
+    return 0
+
+
 def run_career(cfg: Config, args: argparse.Namespace) -> int:
     """`--career`: rebuild the career report from the saved resume and history; no scraping, no e-mail."""
     env = dict(os.environ)
@@ -268,6 +281,8 @@ def run(argv: list[str] | None = None) -> int:
         from . import probe
         probe.run(args.probe)
         return 0
+    if args.explain:
+        return run_explain(cfg, args.explain)
     if args.career:
         return run_career(cfg, args)
     if args.prepare:

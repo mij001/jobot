@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from functools import lru_cache
 
 from .config import Config
@@ -164,23 +165,30 @@ def qualification_text(text: str) -> str:
     return _NVQ_RE.sub(_expand_nvq, _NOT_A_DEGREE.sub(" ", text))
 
 
-def classify_qualifications(job: Job, cfg: Config) -> list[str]:
-    """Qualification levels the advert accepts, e.g. ["degree", "diploma"] for
-    "BSc or HND in Electrical Engineering". Empty when the advert doesn't say."""
+def qualifications_with_source(job: Job, cfg: Config) -> tuple[list[str], bool]:
+    """(qualification levels, guessed). The levels are what the advert accepts, e.g. ["degree", "diploma"] for
+    "BSc or HND in Electrical Engineering"; empty when the advert doesn't say. `guessed` is True when the advert says
+    nothing and the levels only come from the job title ("Technical Officer" -> diploma)."""
     if not cfg.qualifications:
-        return []
+        return [], False
     text = qualification_text(f"{job.title}\n{job.description}")
     found = [q.key for q in cfg.qualifications if matching_keywords(q.keywords, text)]
     if found:
-        return found
-    return [q.key for q in cfg.qualifications if matching_keywords(q.title_hints, job.title)][:1]
+        return found, False
+    guess = [q.key for q in cfg.qualifications if matching_keywords(q.title_hints, job.title)][:1]
+    return guess, bool(guess)
 
 
-def qualification_allowed(keys: list[str], cfg: Config) -> bool:
-    """A job passes if it accepts at least one qualification you've ticked."""
+def classify_qualifications(job: Job, cfg: Config) -> list[str]:
+    return qualifications_with_source(job, cfg)[0]
+
+
+def qualification_allowed(keys: list[str], cfg: Config, guessed: bool = False) -> bool:
+    """A job passes if it accepts at least one qualification you've ticked. A level that is only a guess from the
+    job title counts as "not stated": a title alone must not hide a job (LinkedIn cards carry nothing else)."""
     if not cfg.qualifications:
         return True
-    if not keys:
+    if not keys or guessed:
         return cfg.include_unknown_qualification
     return any((q := cfg.qualification(k)) is not None and q.enabled for k in keys)
 
@@ -208,6 +216,40 @@ def level_allowed(level: str | None, cfg: Config) -> bool:
     return bool(lv and lv.enabled)
 
 
+def explain(job: Job, cfg: Config) -> list[str]:
+    """Walk one job through the same checks as `select_jobs` and say what each decided – for `--explain`, when a posting
+    you saw on a site never reached you. The last line is the verdict."""
+    out: list[str] = []
+    if matching_keywords(cfg.exclude_title_keywords, job.title):
+        return [f"DROPPED: the title has an excluded word ({', '.join(matching_keywords(cfg.exclude_title_keywords, job.title))})"]
+    if is_excluded(job, cfg):
+        return ["DROPPED: employer on your avoid list, or the place/overseas filter"]
+    preset = [k for k in (job.preset or job.subfields) if (sf := cfg.subfield(k)) and sf.enabled]
+    subs = preset + [k for k in match_subfields(job, cfg) if k not in preset]
+    everything = replace(cfg, subfields=[replace(s, enabled=True) for s in cfg.subfields])
+    off = [k for k in match_subfields(job, everything) if k not in subs]
+    if not subs:
+        out.append("sub-field: none of the keywords for your enabled sub-fields is in the title"
+                   + (f" (it would match {', '.join(off)}, which is switched off)" if off else ""))
+        from . import triage
+        if triage.worth_asking(job):
+            out.append("  -> the AI triage may still pick it (it looks like engineering work)"
+                       + ("; as an associate / graduate engineer role it is kept even without the AI"
+                          if triage.entry_level_engineer(job) else ""))
+            return out + ["NOT MATCHED by keywords (see above)"]
+        return out + ["DROPPED: no sub-field, and the title doesn't look like engineering work"]
+    out.append(f"sub-field: {', '.join(subs)}")
+    level = classify_level(replace(job, subfields=subs), cfg)
+    out.append(f"level: {level or 'not stated'}" + ("" if level_allowed(level, cfg) else "  -> switched off"))
+    if not level_allowed(level, cfg):
+        return out + ["DROPPED: that experience level is switched off"]
+    quals, guessed = qualifications_with_source(job, cfg)
+    out.append(f"qualification: {', '.join(quals) or 'not stated'}" + (" (only guessed from the title)" if guessed else ""))
+    if not qualification_allowed(quals, cfg, guessed):
+        return out + ["DROPPED: the advert asks for a qualification you switched off"]
+    return out + ["KEPT"]
+
+
 def select_jobs(jobs: list[Job], cfg: Config) -> list[Job]:
     """Tag and filter jobs, merging duplicates posted on several sites.
 
@@ -233,8 +275,8 @@ def select_jobs(jobs: list[Job], cfg: Config) -> list[Job]:
         job.level = classify_level(job, cfg)
         if not level_allowed(job.level, cfg):
             continue
-        job.qualifications = classify_qualifications(job, cfg)
-        if not qualification_allowed(job.qualifications, cfg):
+        job.qualifications, job.qual_guess = qualifications_with_source(job, cfg)
+        if not qualification_allowed(job.qualifications, cfg, job.qual_guess):
             continue
         first = by_fp.get(job.fingerprint)
         if first is not None:

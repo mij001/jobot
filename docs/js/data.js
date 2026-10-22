@@ -116,7 +116,7 @@ export function renderData(root) {
     barList({ title: "By site", rows: rowsOf(countBy(cur, (j) => j.source), 10), total: cur.length }),
     barList({ title: "By sub-field", rows: rowsOf(countBy(cur, (j) => (j.subfields || [])[0] || null), 10, subLabel), total: cur.length }),
     barList({ title: "By experience level", rows: rowsOf(countBy(cur, (j) => j.level || "none"), 6, (k) => (k === "none" ? "Not stated" : levelLabel(k))), total: cur.length }),
-    barList({ title: "By qualification", rows: rowsOf(countBy(cur, (j) => (j.qualifications || [])[0] || "none"), 6, (k) => (k === "none" ? "Not stated" : qualLabel(k))), total: cur.length }),
+    barList({ title: "By qualification", rows: rowsOf(countBy(cur, (j) => (!j.qual_guess && (j.qualifications || [])[0]) || "none"), 6, (k) => (k === "none" ? "Not stated" : qualLabel(k))), total: cur.length }),
     barList({ title: "Hiring the most", rows: rowsOf(countBy(cur, (j) => j.company || null), 8), total: cur.length }),
     barList({ title: "Where", rows: rowsOf(countBy(cur, (j) => (j.location || "").split(",")[0].trim() || null), 8), total: cur.length }));
   root.append(breakdowns);

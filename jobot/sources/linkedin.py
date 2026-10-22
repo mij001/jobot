@@ -82,7 +82,11 @@ def _get(http: Http, params: dict, retry_wait: float) -> str:
 
 def fetch(http: Http, opts: dict, cfg: Config) -> list[Job]:
     """With `remote: true` only LinkedIn's fully-remote jobs are asked for (its "On-site / Remote" filter),
-    and only those whose listed place is open to Sri Lanka are kept and marked remote."""
+    and only those whose listed place is open to Sri Lanka are kept and marked remote.
+
+    `keywords` are searches for EEE job titles (one page each). `broad_keywords` are generic titles that name no field
+    ("associate engineer", "technical officer"): LinkedIn lists many real EEE vacancies only under those, so they get
+    `broad_pages` pages each, asked last (a rate-limit stops the loop) and left to the title-less triage to sort out."""
     from .remote import open_to_sri_lanka
     remote = bool(opts.get("remote"))
     days = int(opts.get("posted_within_days", 7))
@@ -91,8 +95,10 @@ def fetch(http: Http, opts: dict, cfg: Config) -> list[Job]:
     f_e = experience_filter(opts, cfg)
     jobs: dict[str, Job] = {}
     errors: list[Exception] = []
-    for keyword in opts.get("keywords") or ["electrical engineer"]:
-        for page in range(max_pages):
+    searches = [(k, max_pages) for k in opts.get("keywords") or ["electrical engineer"]]
+    searches += [(k, int(opts.get("broad_pages", 2))) for k in opts.get("broad_keywords") or []]
+    for keyword, pages in searches:
+        for page in range(pages):
             params = {
                 "keywords": keyword,
                 "location": opts.get("location") or "Sri Lanka",
