@@ -48,7 +48,12 @@ class Job:
     @property
     def fingerprint(self) -> str:
         """Site-independent key used to spot the same vacancy on several sites."""
+        if m := _LINKEDIN_ID.search(self.url):  # the search and an alert e-mail word the same LinkedIn job differently
+            return f"linkedin|{m.group(1)}"
         return f"{_norm(self.title)}|{_norm(self.company)}"
+
+
+_LINKEDIN_ID = re.compile(r"linkedin\.com/(?:comm/)?jobs/view/(?:[\w-]*-)?(\d{6,})")
 
 
 def _norm(text: str) -> str:

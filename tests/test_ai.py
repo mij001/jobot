@@ -282,3 +282,17 @@ def test_ask_json_gives_up_on_a_slow_ai_and_does_not_wait_out_busy_models(cfg):
     finally:
         _time.monotonic = orig
     assert len(calls) == 1 and error == "the AI took too long to answer"
+
+
+def test_salvage_results_keeps_the_complete_answers_of_a_cut_off_reply():
+    text = '```json\n{"results": [{"id": "a", "relevant": true, "why": "ok, {braces}"}, {"id": "b", "relevant": false}, {"id": "c", "rele'
+    assert ai.salvage_results(text) == {"results": [{"id": "a", "relevant": True, "why": "ok, {braces}"}, {"id": "b", "relevant": False}]}
+    assert ai.salvage_results('{"results": [') is None and ai.salvage_results("no json") is None
+    assert ai.salvage_results('{"results": [{"id": "a"} {"id": "b"}]}') == {"results": [{"id": "a"}, {"id": "b"}]}  # a missing comma
+
+
+def test_ask_json_uses_the_good_part_of_a_broken_reply(cfg):
+    broken = '{"results": [{"id": "a", "score": 3}, {"id": "b" "score": 4}, {"id": "c", "score": 5}]}'
+    reply_ = FakeResp(body={"choices": [{"message": {"content": broken}}]})
+    answer, model, error = ai.ask_json("s", "u", cfg, {"AI_API_KEY": "k"}, post=lambda *a, **k: reply_, smart=False)
+    assert error is None and answer == {"results": [{"id": "a", "score": 3}]}  # stops at the first broken object

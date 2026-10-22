@@ -544,6 +544,14 @@ things used to lose postings, and are fixed:
   used to starve them), and any associate / graduate / trainee / junior /
   assistant engineer role is **kept even when the AI is out of quota**, with the
   note "check it suits EEE".
+* **The AI review held them back.** Jobs scoring under `ai.min_score` are not sent.
+  The profile now treats generic associate / assistant engineer roles and
+  electrical, electronic or telecom technical-officer roles as "worth a look", the
+  message footer names the best of the held-back jobs ("Held back as poor fits,
+  closest first: …"), the run log lists every one with its score and reason, and
+  they stay on the dashboard tagged *hidden by AI*.
+* **The same job twice.** A LinkedIn job found by the search and again in an alert
+  e-mail is sent once, under the site's own listing.
 * **The search never asked for them.** LinkedIn only searched EEE titles; it now
   also reads generic ones (`linkedin.broad_keywords`, two pages each), and
   Rooster and ikman search "associate / assistant / junior engineer" too.

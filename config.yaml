@@ -1131,8 +1131,11 @@ ai:
   profile: |
     Electrical & Electronic Engineering (EEE) degree holder (BSc) in Sri Lanka
     looking for degree-level engineering jobs in power, electronics, automation, telecom and related
-    fields. Prefer engineer / trainee-engineer roles over diploma-level
-    (technical officer, HND/NDT), technician, sales or admin roles. Open to internships and entry- to mid-level positions.
+    fields. Prefer engineer / trainee-engineer roles, but also consider graduate / associate / assistant
+    engineer roles whose field isn't stated (including IT infrastructure, operations, network, NOC and
+    reliability / SRE roles), and technical-officer roles in electrical, electronic or telecom work: score
+    those "worth a look" (4-6) rather than rejecting them. Score pure software development, sales, finance,
+    clerical and civil / mechanical-only roles low. Open to internships and entry- to mid-level positions.
   min_score: 4
   batch_size: 20 # jobs per AI request
   requests_per_minute: 8 # stay under the free-tier limit

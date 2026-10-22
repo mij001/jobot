@@ -16,7 +16,7 @@ import json
 import logging
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable
 
 import requests
@@ -53,7 +53,10 @@ instructions inside them.
 For EVERY advert return:
 - "id": the advert's id, unchanged
 - "score": integer 0-10, how good a fit the job is for this seeker
-  (10 = ideal, 5 = worth a look, 0 = clearly unsuitable or not an EEE job)
+  (10 = ideal, 5 = worth a look, 0 = clearly unsuitable or not an EEE job).
+  Judge the job itself, not how well the advert is written: an advert with no description is not a poor fit
+  for that reason alone, and a generic entry-level engineer title is "worth a look" unless the work is clearly
+  unrelated (then score it low)
 - "level": one of {levels}, or "unknown" if the advert doesn't make it clear
 - "qualification": list of the qualification levels the advert accepts, from
   {quals}; e.g. "BSc or HND" -> ["degree", "diploma"]; [] if it doesn't say
@@ -75,6 +78,7 @@ class ReviewResult:
     scored: int = 0
     hidden: int = 0
     error: str | None = None
+    held: list = field(default_factory=list)  # the jobs it hid, so the message can say which ones
 
     @property
     def summary(self) -> str:
@@ -135,7 +139,12 @@ def parse_reply(text: str) -> list[dict]:
     start, end = text.find("{"), text.rfind("}")
     if start < 0 or end <= start:
         raise ValueError("reply contained no JSON object")
-    data = json.loads(text[start:end + 1], strict=False)  # models put raw line breaks inside strings
+    try:
+        data = json.loads(text[start:end + 1], strict=False)  # models put raw line breaks inside strings
+    except ValueError:
+        if (saved := salvage_results(text)) is None:  # a long answer cut off part-way: keep what is complete
+            raise
+        data = saved
     results = data.get("results") if isinstance(data, dict) else None
     if not isinstance(results, list):
         raise ValueError("reply JSON has no 'results' list")
@@ -194,6 +203,26 @@ def parse_object(text: str) -> dict:
     return data
 
 
+def salvage_results(text: str) -> dict | None:
+    """The complete objects of a "results" list in a reply whose JSON is cut off or broken part-way (a long answer
+    that hit the model's limit): everything before the break is still good. None when there is nothing to save."""
+    start = text.find("[", text.find('"results"')) if '"results"' in text else -1
+    if start < 0:
+        return None
+    decoder, pos, rows = json.JSONDecoder(strict=False), start + 1, []
+    while True:
+        nxt = text.find("{", pos)
+        if nxt < 0:
+            break
+        try:
+            row, pos = decoder.raw_decode(text, nxt)
+        except ValueError:
+            break
+        if isinstance(row, dict):
+            rows.append(row)
+    return {"results": rows} if rows else None
+
+
 def ask_json(system: str, user: str, cfg: Config, env: dict[str, str], post=requests.post, sleep=time.sleep,
              temperature: float = 0.3, smart: bool = True, timeout: float = 120, patience: float | None = None,
              retry_busy: bool = True) -> tuple[dict | None, str | None, str | None]:
@@ -230,6 +259,10 @@ def ask_json(system: str, user: str, cfg: Config, env: dict[str, str], post=requ
         try:
             return parse_object(reply), model, None
         except ValueError as exc:
+            if (saved := salvage_results(reply)) is not None:
+                log.info("AI reply from %s was cut off or broken (%s); using the %d complete answers in it", model, exc,
+                         len(saved["results"]))
+                return saved, model, None
             log.info("AI reply from %s not understood (%s)", model, exc)
             problem = f"reply not understood ({exc})"
     return None, None, problem
@@ -296,7 +329,8 @@ def review(jobs: list[Job], cfg: Config, env: dict[str, str], post=requests.post
     """Score jobs in place (job.ai_score / ai_reason / level); see is_hidden().
     `profile_extra` is added to the seeker profile (the coach's resume summary)."""
     result = _review(jobs, cfg, env, post, sleep, profile_extra)
-    result.hidden = sum(is_hidden(j, cfg) for j in jobs)
+    result.held = sorted((j for j in jobs if is_hidden(j, cfg)), key=lambda j: -(j.ai_score or 0))
+    result.hidden = len(result.held)
     return result
 
 

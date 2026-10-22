@@ -280,7 +280,11 @@ def select_jobs(jobs: list[Job], cfg: Config) -> list[Job]:
             continue
         first = by_fp.get(job.fingerprint)
         if first is not None:
-            if job.source != first.source and all(s != job.source for s, _ in first.also_on):
+            if first.source.startswith("Email alert") and not job.source.startswith("Email alert"):
+                # the same vacancy read from an alert e-mail first: the site's own listing has the cleaner title and company
+                job.also_on = [*first.also_on, (first.source, first.url)]
+                selected[selected.index(first)] = by_fp[job.fingerprint] = job
+            elif job.source != first.source and all(s != job.source for s, _ in first.also_on):
                 first.also_on.append((job.source, job.url))
             continue
         by_fp[job.fingerprint] = job

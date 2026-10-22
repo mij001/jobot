@@ -215,6 +215,12 @@ def dashboard_url(env: dict[str, str]) -> str | None:
     return f"https://{owner}.github.io/{repo}/" if owner and repo else None
 
 
+def _held_note(held: list[Job], show: int = 4) -> str:
+    """"Held back as poor fits, closest first: …" – so a job the AI hid is never invisible."""
+    names = "; ".join(f"{j.title} · {j.company or j.source} ({j.ai_score}/10)" for j in held[:show])
+    return f"Held back as poor fits, closest first: {names}" + (f" … (+{len(held) - show} more on the dashboard)" if len(held) > show else "")
+
+
 def run_explain(cfg: Config, text: str) -> int:
     """`--explain "Title | Company | Place"`: walk one job through the filters and print what each step decided."""
     title, company, place = ([p.strip() for p in text.split("|")] + ["", ""])[:3]
@@ -361,6 +367,8 @@ def run(argv: list[str] | None = None) -> int:
             ai_note = outcome.summary
             shown = [j for j in kept if not ai.is_hidden(j, cfg)]
             log.info("%s", ai_note)
+            for j in outcome.held[:100]:
+                log.info("  held back (%s/10): %s · %s – %s", j.ai_score, j.title, j.company or j.source, j.ai_reason)
         else:
             log.info("AI review is on but AI_API_KEY isn't set – skipping it")
     for line in helpers.out.notes:
@@ -377,7 +385,8 @@ def run(argv: list[str] | None = None) -> int:
         read_note=read_stats.summary if read_stats else None,
         history_note=history.note if weekly_day else None, dashboard_url=dashboard_url(env),
         weekly=(stats.week_summary(runs, cfg, today) + coach.weekly_lines(history, cfg)) if weekly_day else [],
-        reminders=reminders, at=now.strftime("%H:%M") if quick else None, notes=helpers.out.notes,
+        reminders=reminders, at=now.strftime("%H:%M") if quick else None,
+        notes=helpers.out.notes + ([_held_note(outcome.held)] if outcome and outcome.held else []),
         missed=stats.near_misses(all_jobs, cfg, cfg.dropped_list) if weekly_day and cfg.dropped_list else [],
         tips=[t["text"] for t in tips if t["kind"] != "insight"][:3] if weekly_day else [],
     )
