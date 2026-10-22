@@ -601,7 +601,11 @@ and nothing breaks.
 
 The message footer says what the AI did ("AI triage: looked at 40 jobs … picked
 3", "AI remote check: 12 jobs checked, 7 dropped"), and the dashboard's job card
-shows the note. Everything in an advert is treated as untrusted text. Tune it
+shows the note. A busy AI can't hold a run up: each request gives up after
+40 seconds, the helpers stop after two unanswered requests in a row and after
+`ai.helper_seconds` (180) of waiting, and `schedule.total_seconds` (900) cuts the
+helpers, advert reading and AI review short so a run always finishes inside
+GitHub's 20-minute limit. Everything in an advert is treated as untrusted text. Tune it
 under `ai:` in `config.yaml` (`daily_budget`, `triage_batch`, `triage_calls`,
 `vet_batch`, `alert_calls`; `helpers: false` turns the lot off).
 

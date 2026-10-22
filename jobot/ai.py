@@ -154,8 +154,9 @@ def _job_payload(job: Job) -> dict:
 
 
 def _ask(url: str, model: str, key: str, messages: list[dict], post, sleep, temperature: float = 0.1,
-         last: bool = True, timeout: float = 120) -> str:
-    """One chat call. `last` = no other model to fall back on, so a rate limit is worth waiting out."""
+         last: bool = True, timeout: float = 120, retry_busy: bool = True) -> str:
+    """One chat call. `last` = no other model to fall back on, so a rate limit is worth waiting out.
+    `retry_busy` = wait and try a "high demand" (5xx) model once more instead of moving on at once."""
     body = {"model": model, "messages": messages, "temperature": temperature}
     headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
     for attempt in range(2):
@@ -170,7 +171,7 @@ def _ask(url: str, model: str, key: str, messages: list[dict], post, sleep, temp
             log.info("AI rate limit hit; waiting %ds", wait)
             sleep(min(wait, 120))
             continue
-        if resp.status_code in (500, 502, 503, 504) and attempt == 0:  # "high demand" spikes pass quickly
+        if resp.status_code in (500, 502, 503, 504) and attempt == 0 and retry_busy:  # "high demand" spikes pass quickly
             log.info("%s is busy (HTTP %d); trying it once more in %ds", model, resp.status_code, BUSY_WAIT)
             sleep(BUSY_WAIT)
             continue
@@ -194,9 +195,12 @@ def parse_object(text: str) -> dict:
 
 
 def ask_json(system: str, user: str, cfg: Config, env: dict[str, str], post=requests.post, sleep=time.sleep,
-             temperature: float = 0.3, smart: bool = True) -> tuple[dict | None, str | None, str | None]:
+             temperature: float = 0.3, smart: bool = True, timeout: float = 120, patience: float | None = None,
+             retry_busy: bool = True) -> tuple[dict | None, str | None, str | None]:
     """One question, one JSON answer, trying the models in turn (the stronger `smart` list by
-    default). Returns (answer, model used, error) – the answer is None when nothing worked."""
+    default). Returns (answer, model used, error) – the answer is None when nothing worked.
+    `timeout` is how long one reply may take; `patience` (seconds) stops trying further models once this
+    question has already taken that long, so a busy AI can't hold a whole run up."""
     key = env.get("AI_API_KEY", "")
     try:
         url, models = endpoint(cfg, env, smart=smart)
@@ -204,12 +208,17 @@ def ask_json(system: str, user: str, cfg: Config, env: dict[str, str], post=requ
         return None, None, str(exc)
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
     problem = "none of the configured models is available"
+    started = time.monotonic()
     for i, model in enumerate(models):
         if model in _NO_QUOTA and any(m not in _NO_QUOTA for m in models):  # no point asking again
             continue
+        if patience is not None and time.monotonic() - started > patience:
+            problem = "the AI took too long to answer"
+            break
         later = [m for m in models[i + 1:] if m not in _NO_QUOTA]
         try:
-            reply = _ask(url, model, key, messages, post, sleep, temperature, last=not later)
+            reply = _ask(url, model, key, messages, post, sleep, temperature, last=not later, timeout=timeout,
+                         retry_busy=retry_busy)
         except _ModelGone as exc:
             log.info("AI model unavailable, trying the next one: %s", exc)
             problem = str(exc).split(": ", 1)[-1]

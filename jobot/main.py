@@ -299,6 +299,11 @@ def run(argv: list[str] | None = None) -> int:
     now = datetime.now(SRI_LANKA_TZ)
     today = now.date()
     data_dir = Path(args.state).parent
+    started = time.monotonic()
+
+    def time_left() -> float:
+        return cfg.schedule.total_seconds - (time.monotonic() - started)
+
     schedule = Schedule(data_dir / "schedule.json")
     # A scheduled run is either the day's first (the "digest": summary, reminders, "nothing new" notice) or a
     # quick check in between that only messages you when it finds something and skips slow sites.
@@ -311,6 +316,7 @@ def run(argv: list[str] | None = None) -> int:
     # look like EEE work (and the ones it turns down aren't opened for OCR) and checks remote jobs are open to Sri Lanka.
     # Answers are cached and capped by a small daily budget; see triage.py.
     helpers = triage.Helpers(cfg, env, schedule, data_dir, today, enabled=not args.no_ai)
+    helpers.stop_at = started + cfg.schedule.total_seconds - 420  # leaves time to read adverts and review
     all_jobs, results = scrape(cfg, env, schedule, now, full=not quick, extract=helpers.extract_alert)
     matched = select_jobs(all_jobs, cfg)
     store = SeenStore(args.state)
@@ -324,7 +330,7 @@ def run(argv: list[str] | None = None) -> int:
         cache = postings.PostingCache(data_dir / "postings_cache.json")
         to_read = postings.pick(all_jobs, matched, (lambda j: True) if args.all else store.is_new, cfg, skip=judged.rejected)
         vision = None if args.no_ai else ai.poster_reader(cfg, env)
-        read_stats = postings.enrich(to_read, cache, cfg, today, vision=vision)
+        read_stats = postings.enrich(to_read, cache, cfg, today, vision=vision, max_seconds=max(20.0, time_left() - 300))
         log.info("%s", read_stats.summary or "No new adverts to read")
         if not args.dry_run:
             cache.prune(today)
@@ -346,7 +352,10 @@ def run(argv: list[str] | None = None) -> int:
             log.info("Dropped remote job %r: %s", job.title, vetted.vetoed[job.uid])
 
     shown, ai_note, outcome = kept, None, None
-    if cfg.ai.enabled and not args.no_ai:
+    if cfg.ai.enabled and not args.no_ai and time_left() < 240:
+        ai_note = "AI review skipped: the run was out of time"
+        log.info("%s", ai_note)
+    elif cfg.ai.enabled and not args.no_ai:
         if env.get("AI_API_KEY") or env.get("AI_BASE_URL"):
             outcome = ai.review(kept, cfg, env, profile_extra=coach.digest_for_review(history, cfg))
             ai_note = outcome.summary

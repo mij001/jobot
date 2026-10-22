@@ -257,3 +257,28 @@ def test_replies_with_raw_line_breaks_inside_strings_are_still_read():
     text = '```json\n{"digest": "first line\nsecond line", "n": 2}\n```'
     assert ai.parse_object(text) == {"digest": "first line\nsecond line", "n": 2}
     assert ai.parse_reply('{"results": [{"id": "a", "reason": "x\ny"}]}') == [{"id": "a", "reason": "x\ny"}]
+
+
+def test_ask_json_gives_up_on_a_slow_ai_and_does_not_wait_out_busy_models(cfg):
+    calls, waits = [], []
+
+    def busy(url, json, headers, timeout):
+        calls.append((json["model"], timeout))
+        return FakeResp(503, text="high demand")
+
+    answer, model, error = ai.ask_json("s", "u", cfg, {"AI_API_KEY": "k"}, post=busy, sleep=waits.append, smart=False,
+                                       timeout=40, retry_busy=False)
+    assert answer is None and waits == [] and len({m for m, _ in calls}) == len(calls) > 1  # each model once, no waiting
+    assert all(t == 40 for _, t in calls)
+
+    clock = iter([0.0, 0.0, 50.0, 50.0, 50.0, 50.0])  # the first model has already used up the patience
+    import time as _time
+    orig = _time.monotonic
+    _time.monotonic = lambda: next(clock)
+    try:
+        calls.clear()
+        _, _, error = ai.ask_json("s", "u", cfg, {"AI_API_KEY": "k"}, post=busy, sleep=waits.append, smart=False,
+                                  patience=45, retry_busy=False)
+    finally:
+        _time.monotonic = orig
+    assert len(calls) == 1 and error == "the AI took too long to answer"

@@ -95,6 +95,7 @@ class ScheduleConfig:
     run_seconds: int = 540  # the whole read of all sites (retries included) is cut off after this long
     retry_seconds: int = 90  # the second chance given to a failed site is this long at most
     retry_failed: bool = True  # ask a site that timed out or errored once more before giving up
+    total_seconds: int = 900  # the whole run: the AI helpers, advert reading and AI review are cut short to fit (the job is cancelled at 20 min)
 
 
 @dataclass
@@ -125,6 +126,7 @@ class AIConfig:
     triage_batch: int = 80  # job titles per triage request
     triage_calls: int = 4  # most triage requests in one run
     vet_batch: int = 25  # remote jobs per eligibility request
+    helper_seconds: int = 180  # most time one run spends waiting for the AI helpers (a busy AI must not stall the run)
     alert_calls: int = 4  # most job-alert e-mails the AI reads per run (only ones in a layout the plain parser doesn't know)
 
 
@@ -335,6 +337,7 @@ def _parse_schedule(body: dict[str, Any]) -> ScheduleConfig:
         workers=min(16, max(1, _opt_int(body.get("workers", 6), "schedule.workers") or 6)),
         site_seconds=min(1200, max(30, _opt_int(body.get("site_seconds", 240), "schedule.site_seconds") or 240)),
         run_seconds=min(1500, max(60, _opt_int(body.get("run_seconds", 540), "schedule.run_seconds") or 540)),
+        total_seconds=min(1100, max(300, _opt_int(body.get("total_seconds", 900), "schedule.total_seconds") or 900)),
         retry_seconds=min(600, max(15, _opt_int(body.get("retry_seconds", 90), "schedule.retry_seconds") or 90)),
         retry_failed=bool(body.get("retry_failed", True)),
     )
@@ -370,6 +373,7 @@ def _parse_ai(body: dict[str, Any]) -> AIConfig:
         triage_batch=min(120, max(5, _opt_int(body.get("triage_batch", 80), "ai.triage_batch") or 80)),
         triage_calls=min(10, max(0, _opt_int(body.get("triage_calls", 4), "ai.triage_calls") or 0)),
         vet_batch=min(60, max(3, _opt_int(body.get("vet_batch", 25), "ai.vet_batch") or 25)),
+        helper_seconds=min(900, max(0, _opt_int(body.get("helper_seconds", 180), "ai.helper_seconds") or 0)),
         alert_calls=min(20, max(0, _opt_int(body.get("alert_calls", 4), "ai.alert_calls") or 0)),
     )
 

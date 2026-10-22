@@ -683,6 +683,9 @@ schedule:
   # the whole read of all sites (second chances included) is cut off after run_seconds.
   site_seconds: 240
   run_seconds: 540
+  # The whole run, start to finish. The AI helpers, the reading of adverts and the AI review are cut short to fit,
+  # so a busy AI or a slow site can never run into GitHub's 20-minute limit (which would lose the whole run).
+  total_seconds: 900
   retry_seconds: 90
   # Ask a site that timed out or errored once more before giving up on it.
   retry_failed: true
@@ -1147,6 +1150,7 @@ ai:
   triage_calls: 4    # most triage requests in one run
   vet_batch: 25      # remote jobs per eligibility request
   alert_calls: 4     # most unknown alert e-mails read in one run
+  helper_seconds: 180 # most time a run spends waiting for the helpers; a busy AI (503) can't stall it
 
 # ===========================================================================
 #  7. CAREER COACH (optional, free – needs the AI key and your resume)

@@ -106,8 +106,8 @@ class Decisions:
                 self.entries = raw
             except ValueError:
                 log.warning("%s is damaged – starting fresh", self.path)
-        if stale:  # answers given under an older, stricter prompt: keep the "yes", ask the "no" again
-            self.entries = {k: v for k, v in self.entries.items() if v.startswith("y:") or k.startswith("mail:")}
+        self.old_prompt = stale  # the "no" answers in this file come from an older, stricter prompt
+        self.fresh: set[str] = set()  # decided in this run
         self._saved = None if stale else dict(self.entries)  # None: the file is rewritten even if nothing else changes
 
     def get(self, uid: str) -> tuple[bool, str] | None:
@@ -117,7 +117,13 @@ class Decisions:
         parts = raw.split(":")
         return (parts[0] == "y", parts[1] if len(parts) > 2 else "")
 
+    def doubtful(self, uid: str) -> bool:
+        """A "no" from an older prompt (not decided in this run): worth a second look for the roles it was too strict about."""
+        known = self.get(uid)
+        return bool(self.old_prompt and known and not known[0] and uid not in self.fresh and not uid.startswith("mail:"))
+
     def put(self, uid: str, relevant: bool, sub: str, today: date) -> None:
+        self.fresh.add(uid)
         stamp = today.strftime("%Y%m%d")
         self.entries[uid] = f"y:{sub}:{stamp}" if relevant else f"n:{stamp}"
 
@@ -218,12 +224,23 @@ class Helpers:
         self._exhausted = False
         self._first = True
         self._alerts_read = 0
+        self.stop_at: float | None = None  # time.monotonic() value after which no more requests are made (the run is nearly out of time)
+        self._waited = 0.0  # seconds spent waiting for the AI this run
+        self._failures = 0  # answers missing in a row
 
     # -- one request ---------------------------------------------------------------------------------------------
 
     def _ask(self, system: str, items: list[dict] | dict) -> dict | None:
         """One batched request, or None when the AI is off, today's budget is used up, or it didn't answer."""
         if not self.on or self._exhausted:
+            return None
+        if self.stop_at is not None and time.monotonic() >= self.stop_at:
+            self._exhausted = True
+            self.out.notes.append("AI helpers: skipped the rest, the run was running out of time")
+            return None
+        if self._waited >= self.cfg.ai.helper_seconds:
+            self._exhausted = True
+            self.out.notes.append(f"AI helpers: stopped after {self._waited:.0f}s of waiting for the AI (ai.helper_seconds)")
             return None
         if not self.schedule.spend_ai(self.today.isoformat(), self.cfg.ai.daily_budget):
             self._exhausted = True
@@ -232,10 +249,19 @@ class Helpers:
         if not self._first:
             self.sleep(60.0 / max(1, self.cfg.ai.requests_per_minute))
         self._first = False
+        started = time.monotonic()
         data, _model, error = ai.ask_json(system, json.dumps(items, ensure_ascii=False), self.cfg, self.env,
-                                          post=self.post, sleep=self.sleep, temperature=0.1, smart=False)
+                                          post=self.post, sleep=self.sleep, temperature=0.1, smart=False,
+                                          timeout=40, patience=45, retry_busy=False)  # a busy AI: move on, don't wait
+        self._waited += time.monotonic() - started
         if data is None:
             self.out.notes.append(f"AI helpers: no answer ({error})")
+            self._failures += 1
+            if self._failures >= 2:  # the AI is down, busy or out of quota: don't queue more requests behind it
+                self._exhausted = True
+                self.out.notes.append("AI helpers: the AI isn't answering, so the rest waits for the next run")
+        else:
+            self._failures = 0
         return data
 
     @staticmethod
@@ -264,7 +290,7 @@ class Helpers:
             if not worth_asking(job) or is_excluded(job, cfg):
                 continue
             known = self.decisions.get(job.uid)
-            if known is None:
+            if known is None or (self.decisions.doubtful(job.uid) and entry_level_engineer(job)):
                 todo.append(job)
             elif known[0]:
                 self._rescue(job, known[1], fields)
@@ -298,7 +324,7 @@ class Helpers:
         # Whatever the AI didn't get to (no key, no quota left, queue too long) and is an entry-level engineer role is kept
         # anyway, marked as unchecked: it is far worse to lose "Associate Engineer" jobs than to show a few extra ones.
         for job in todo:
-            if self.decisions.get(job.uid) is None and entry_level_engineer(job):
+            if (self.decisions.get(job.uid) is None or self.decisions.doubtful(job.uid)) and entry_level_engineer(job):
                 sub = "general" if "general" in fields else ""
                 self._rescue(job, sub, fields, "", unchecked=True)
                 self.out.unchecked += 1

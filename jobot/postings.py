@@ -495,7 +495,7 @@ def apply(job: Job, entry: dict, cfg: Config) -> None:
 
 
 def enrich(jobs: list[Job], cache: PostingCache, cfg: Config, today: date,
-           http: Http | None = None, vision: Vision | None = None) -> ReadStats:
+           http: Http | None = None, vision: Vision | None = None, max_seconds: float | None = None) -> ReadStats:
     """Read (or recall) the advert behind each job. At most postings.max_per_run new pages are opened per
     run, a few at a time (postings.workers, each on its own connection) and no longer than
     postings.max_seconds in all – what is left waits for the next run."""
@@ -503,7 +503,7 @@ def enrich(jobs: list[Job], cache: PostingCache, cfg: Config, today: date,
     http = http or Http(delay=1.0)
     blocked: set[str] = set()
     lock = threading.Lock()
-    deadline = time.monotonic() + cfg.postings.max_seconds
+    deadline = time.monotonic() + (cfg.postings.max_seconds if max_seconds is None else min(max_seconds, cfg.postings.max_seconds))
     fresh: list[Job] = []
     for job in jobs:
         if cache.get(job.uid) is None:

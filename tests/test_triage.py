@@ -502,18 +502,46 @@ def test_triage_priority_order():
     assert ranked[-1].title == "Executive Officer"
 
 
-def test_the_stricter_prompts_no_answers_are_asked_again(tmp_path):
-    path = tmp_path / "d.json"
-    path.write_text('{\n"topjobs.lk:1": "n:20261001",\n"topjobs.lk:2": "y:power:20261001",\n"mail:abc": "n:20261001"\n}\n', encoding="utf-8")
-    d = triage.Decisions(path)  # no "_version": written by the first prompt
-    assert d.get("topjobs.lk:1") is None and d.get("topjobs.lk:2") == (True, "power") and d.get("mail:abc") is not None
+def test_a_no_from_the_stricter_prompt_is_doubted_only_for_entry_level_engineer_roles(cfg, tmp_path):
+    entry, other = linkedin_posts()[0], job("Technical Officer Maintenance")
+    path = tmp_path / "ai_decisions.json"
+    path.write_text(f'{{\n"{entry.uid}": "n:20261001",\n"{other.uid}": "n:20261001",\n"topjobs.lk:2": "y:power:20261001",\n"mail:abc": "n:20261001"\n}}\n',
+                    encoding="utf-8")  # no "_version": written by the first prompt
+    d = triage.Decisions(path)
+    assert d.old_prompt and d.doubtful(entry.uid) and d.doubtful(other.uid) and not d.doubtful("mail:abc") and not d.doubtful("topjobs.lk:2")
     d.save()  # rewritten even though nothing was added, now with the version
     assert '"_version": "2"' in path.read_text(encoding="utf-8")
-    again = triage.Decisions(path)
-    assert again.get("topjobs.lk:2") == (True, "power") and again.get("topjobs.lk:1") is None
-    again.put("topjobs.lk:1", False, "", TODAY)
-    again.save()
-    assert triage.Decisions(path).get("topjobs.lk:1") == (False, "")  # a new "no" is kept
+    assert not triage.Decisions(path).old_prompt
+
+    # asked again (and kept without the AI): only the entry-level engineer role; the other old "no" stands
+    h = make_helpers(cfg, tmp_path, FakeAI(), env={})
+    h.decisions = triage.Decisions(tmp_path / "old.json")
+    (tmp_path / "old.json").write_text(path.read_text(encoding="utf-8").replace('"_version": "2"', '"_version": "1"'), encoding="utf-8")
+    h.decisions = triage.Decisions(tmp_path / "old.json")
+    out = h.triage([entry, other], [])
+    assert entry.preset == ["general"] and out.unchecked == 1 and other.uid in out.rejected and not other.preset
+
+
+def test_a_busy_ai_cannot_stall_the_run(cfg, tmp_path):
+    """Two requests in a row without an answer: the helpers stop asking for the rest of the run."""
+    cfg.ai.triage_batch, cfg.ai.triage_calls = 5, 4
+    jobs = [job(f"Maintenance Engineer {i}") for i in range(40)]
+    fake = FakeAI()  # answers with nonsense every time
+    h = make_helpers(cfg, tmp_path, fake)
+    out = h.triage(jobs, [])
+    assert any("isn't answering" in n for n in out.notes)
+    assert h.schedule.ai_spent(TODAY.isoformat()) == 2  # two requests (each tried on every model); the rest cost nothing
+
+
+def test_waiting_for_the_ai_has_a_time_limit(cfg, tmp_path, monkeypatch):
+    cfg.ai.triage_batch, cfg.ai.helper_seconds = 5, 10
+    import types
+    clock = iter(range(0, 1000, 8))  # every request "takes" 8 s
+    monkeypatch.setattr(triage, "time", types.SimpleNamespace(monotonic=lambda: next(clock), sleep=lambda s: None))
+    fake = FakeAI(triage_rule=lambda it: {"id": it["id"], "relevant": False})
+    h = make_helpers(cfg, tmp_path, fake)
+    out = h.triage([job(f"Maintenance Engineer {i}") for i in range(40)], [])
+    assert h.schedule.ai_spent(TODAY.isoformat()) == 2 and any("ai.helper_seconds" in n for n in out.notes)
 
 
 def test_linkedin_reads_generic_titles_deeper(cfg):
@@ -601,3 +629,18 @@ def test_explain_command_prints_the_verdict(capsys):
 ])
 def test_entry_level_engineer_fallback_leaves_other_branches_to_the_ai(title, expected):
     assert triage.entry_level_engineer(job(title)) is expected
+
+
+def test_helpers_stop_when_the_run_is_nearly_out_of_time(cfg, tmp_path):
+    import time
+    fake = FakeAI(triage_rule=lambda it: pytest.fail("must not ask"))
+    h = make_helpers(cfg, tmp_path, fake)
+    h.stop_at = time.monotonic() - 1
+    out = h.triage([job("Maintenance Engineer"), linkedin_posts()[0]], [])
+    assert not fake.calls and any("running out of time" in n for n in out.notes)
+    assert out.unchecked == 1  # the entry-level engineer role is still kept
+
+
+def test_run_total_budget_is_validated(cfg):
+    from jobot.config import load_config
+    assert load_config(jobot_main.ROOT / "config.yaml").schedule.total_seconds == 900
