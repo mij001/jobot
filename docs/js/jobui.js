@@ -76,7 +76,7 @@ export function jobCard(j, { onSkill } = {}) {
   const m = matchOf(j);
   if (m) tags.append(el("span", { class: "tag match" + (m.pct >= 70 ? " hi" : "") }, `Resume match ${m.pct}%`));
   for (const k of (j.subfields || []).slice(0, 2)) if (cfg.subfields?.[k]) tags.append(el("span", { class: "tag" }, cfg.subfields[k].label));
-  if (j.status === "hidden") tags.append(el("span", { class: "tag warn" }, "hidden by AI"));
+  if (j.status === "hidden") tags.append(el("span", { class: "tag warn" }, "held back"));
   if (tags.children.length) card.append(tags);
 
   if (j.skills?.length) {

@@ -14,7 +14,7 @@ import time
 
 import requests
 
-from . import ai, coach, filters, notifiers, postings, stats, suggestions, triage
+from . import ai, coach, filters, judge, notifiers, postings, stats, suggestions, triage
 from .history import History
 from .config import GROUP_BY, ORDER_BY, Config, ConfigError, load_config
 from .filters import select_jobs
@@ -215,12 +215,6 @@ def dashboard_url(env: dict[str, str]) -> str | None:
     return f"https://{owner}.github.io/{repo}/" if owner and repo else None
 
 
-def _held_note(held: list[Job], show: int = 4) -> str:
-    """"Held back as poor fits, closest first: …" – so a job the AI hid is never invisible."""
-    names = "; ".join(f"{j.title} · {j.company or j.source} ({j.ai_score}/10)" for j in held[:show])
-    return f"Held back as poor fits, closest first: {names}" + (f" … (+{len(held) - show} more on the dashboard)" if len(held) > show else "")
-
-
 def run_explain(cfg: Config, text: str) -> int:
     """`--explain "Title | Company | Place"`: walk one job through the filters and print what each step decided."""
     title, company, place = ([p.strip() for p in text.split("|")] + ["", ""])[:3]
@@ -357,36 +351,33 @@ def run(argv: list[str] | None = None) -> int:
         if job.uid in vetted.vetoed:
             log.info("Dropped remote job %r: %s", job.title, vetted.vetoed[job.uid])
 
-    shown, ai_note, outcome = kept, None, None
-    if cfg.ai.enabled and not args.no_ai and time_left() < 240:
-        ai_note = "AI review skipped: the run was out of time"
+    # The last gate: read each posting against your requirements (plain rules, then the AI). Jobs that fail are held back;
+    # jobs whose posting or AI answer isn't there yet wait for a later run instead of going out half-checked.
+    judged = judge.judge(kept, cfg, env, schedule, use_ai=not args.no_ai, time_left=time_left(), wait=not args.all,
+                         profile_extra=coach.digest_for_review(history, cfg) if cfg.ai.enabled and not args.no_ai else "")
+    shown, outcome, ai_note = judged.shown, judged.outcome, judged.ai_note
+    if ai_note:
         log.info("%s", ai_note)
-    elif cfg.ai.enabled and not args.no_ai:
-        if env.get("AI_API_KEY") or env.get("AI_BASE_URL"):
-            outcome = ai.review(kept, cfg, env, profile_extra=coach.digest_for_review(history, cfg))
-            ai_note = outcome.summary
-            shown = [j for j in kept if not ai.is_hidden(j, cfg)]
-            log.info("%s", ai_note)
-            for j in outcome.held[:100]:
-                log.info("  held back (%s/10): %s · %s – %s", j.ai_score, j.title, j.company or j.source, j.ai_reason)
-        else:
-            log.info("AI review is on but AI_API_KEY isn't set – skipping it")
+    waiting_uids = {j.uid for j in judged.waiting}
+    settled = [j for j in new if j.uid not in waiting_uids]  # judged for good: sent or held back
     for line in helpers.out.notes:
         log.info("%s", line)
 
-    record = stats.run_record(today, results, all_jobs, matched, new, shown, cfg, outcome, read_stats)
+    record = stats.run_record(today, results, all_jobs, matched, settled, shown, cfg, outcome, read_stats)
     runs = history.merged_runs(record)
     tips = suggestions.generate(runs, cfg, today)
     weekly_day = not quick and cfg.weekly_summary in ("daily", today.strftime("%A").lower())
     reminders = [] if quick else coach.closing_soon(history, today)
-    stats_line = f"{len(all_jobs)} jobs scanned · {len(matched)} open matches · {len(new)} new · {len(shown)} sent"
+    stats_line = (f"{len(all_jobs)} jobs scanned · {len(matched)} open matches · {len(new)} new · {len(shown)} sent"
+                  + (f" · {len(judged.held)} held back" if judged.held else "")
+                  + (f" · {len(judged.waiting)} waiting" if judged.waiting else ""))
     report = Report(
         jobs=shown, sources=results, cfg=cfg, day=today, ai_note=ai_note, stats_line=stats_line,
         read_note=read_stats.summary if read_stats else None,
         history_note=history.note if weekly_day else None, dashboard_url=dashboard_url(env),
         weekly=(stats.week_summary(runs, cfg, today) + coach.weekly_lines(history, cfg)) if weekly_day else [],
         reminders=reminders, at=now.strftime("%H:%M") if quick else None,
-        notes=helpers.out.notes + ([_held_note(outcome.held)] if outcome and outcome.held else []),
+        notes=helpers.out.notes + ([judge.held_note(judged.held)] if judged.held else []) + judged.notes,
         missed=stats.near_misses(all_jobs, cfg, cfg.dropped_list) if weekly_day and cfg.dropped_list else [],
         tips=[t["text"] for t in tips if t["kind"] != "insight"][:3] if weekly_day else [],
     )
@@ -419,7 +410,12 @@ def run(argv: list[str] | None = None) -> int:
 
     if delivered:
         for job in new:
-            store.add(job, today)
+            if job.uid in waiting_uids:
+                schedule.put_off(job.uid, today.isoformat())  # not marked as sent: it comes back next run
+            else:
+                store.add(job, today)
+                schedule.settle(job.uid)
+        schedule.forget_old_put_offs(today.isoformat())
         store.prune(cfg.remember_days, today)
         store.save()
         helpers.save()
@@ -429,10 +425,10 @@ def run(argv: list[str] | None = None) -> int:
         # Quiet quick runs change nothing, so they commit nothing: the history is only rewritten when there are
         # new jobs, or a site's status differs from what the day's record already says.
         previous = history.runs[-1] if history.runs and history.runs[-1].get("date") == record["date"] else None
-        if not quick or new or previous is None or stats.status_signature(previous) != stats.status_signature(record):
+        if not quick or settled or previous is None or stats.status_signature(previous) != stats.status_signature(record):
             history.add_run(record)
             history.suggestions = tips
-            history.add_jobs(today, new, {j.uid for j in new} - {j.uid for j in shown}, cfg)
+            history.add_jobs(today, settled, {j.uid for j in settled} - {j.uid for j in shown}, cfg)
             history.backfill_skills(cfg)
             history.save()
         if not quick and history.enabled and coach.weekly_due(cfg, today):  # never lets the coach break the daily run

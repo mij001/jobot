@@ -38,6 +38,10 @@ class Job:
     watched: bool = False  # the employer is on your watch list
     remote: bool = False  # a fully remote job that is open to people in Sri Lanka
     remote_rule: str = ""  # what the plain-text check said about it: "open" or "unsure" (the AI settles those)
+    ai_verdict: str = ""  # the AI's reading of the posting against your requirements: "match", "maybe" or "no"
+    rule_verdict: str = ""  # the plain-rule check of the same ("match" / "maybe" / "no"), used when the AI could not judge
+    rescued: str = ""  # how a job the keywords did not place got in: "ai" or "rule" (see triage.py)
+    unread: bool = False  # its posting could not be opened yet (limits, a site that refuses): it is judged again next run
     ai_note: str = ""  # why the AI let this job through / what to check ("Open to Sri Lanka: no US hours needed")
     preset: list[str] | None = field(default=None, repr=False)  # sub-fields set by the source
 

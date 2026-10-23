@@ -23,6 +23,7 @@ class Schedule:
         self.path = Path(path)
         self.digest_day = ""
         self.sources: dict[str, str] = {}
+        self.deferred: dict[str, list] = {}  # job uid -> [times put off, last day]: waiting for its posting / the AI
         self.ai_day = ""  # the AI helpers (triage, remote vetting …) share a small daily request budget
         self.ai_calls = 0
         if self.path.exists():
@@ -32,6 +33,8 @@ class Schedule:
                 data = {}
             self.digest_day = str(data.get("digest") or "")
             self.sources = {str(k): str(v) for k, v in (data.get("sources") or {}).items()}
+            self.deferred = {str(k): [int(v[0]), str(v[1])] for k, v in (data.get("deferred") or {}).items()
+                             if isinstance(v, list) and len(v) == 2}
             ai = data.get("ai") or {}
             self.ai_day, self.ai_calls = str(ai.get("day") or ""), int(ai.get("calls") or 0)
         self._saved = self._data()
@@ -40,6 +43,8 @@ class Schedule:
         data: dict = {"digest": self.digest_day, "sources": dict(sorted(self.sources.items()))}
         if self.ai_calls:
             data["ai"] = {"day": self.ai_day, "calls": self.ai_calls}
+        if self.deferred:
+            data["deferred"] = dict(sorted(self.deferred.items()))
         return data
 
     # -- the daily digest -------------------------------------------------------
@@ -77,6 +82,23 @@ class Schedule:
             self.ai_day, self.ai_calls = today, 0
         self.ai_calls += 1
         return True
+
+    # -- jobs put off until they can be judged ------------------------------------------------------
+
+    def put_offs(self, uid: str) -> int:
+        return self.deferred.get(uid, [0, ""])[0]
+
+    def put_off(self, uid: str, today: str) -> int:
+        n = self.put_offs(uid) + 1
+        self.deferred[uid] = [n, today]
+        return n
+
+    def settle(self, uid: str) -> None:
+        self.deferred.pop(uid, None)
+
+    def forget_old_put_offs(self, today: str, days: int = 3) -> None:
+        cutoff = (datetime.fromisoformat(today) - timedelta(days=days)).date().isoformat()
+        self.deferred = {k: v for k, v in self.deferred.items() if v[1] >= cutoff}
 
     # -- saving -------------------------------------------------------------------
 

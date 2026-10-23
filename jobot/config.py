@@ -66,6 +66,9 @@ class Qualification:
     # Used only when the advert itself names no qualification, e.g. a
     # "Technical Officer" poster that couldn't be read is almost always diploma level.
     title_hints: list[str] = field(default_factory=list)
+    # True: a job whose title matches a hint is treated as asking for this level even though the advert doesn't
+    # say so (right for trade roles such as "Electrician"); False: the hint is only a guess and hides nothing.
+    guess_filters: bool = False
 
     @property
     def short(self) -> str:
@@ -84,6 +87,7 @@ class PostingsConfig:
     ai_vision: bool = True  # let the AI read posters OCR can't
     max_ai_reads: int = 5
     skip_titles: list[str] = field(default_factory=list)  # don't open these "maybe" ads
+    linkedin_max: int = 15  # LinkedIn refuses a site's visitor after a few dozen pages: open at most this many per run
 
 
 @dataclass
@@ -117,7 +121,7 @@ class AIConfig:
     smart_models: list[str] = field(default_factory=list)  # stronger models: career coach, harder tasks
     profile: str = ""
     min_score: int = 4
-    batch_size: int = 20
+    batch_size: int = 10
     requests_per_minute: int = 8
     # AI "helpers": judgment calls keywords can't make (see triage.py). Each is a batched, cached request
     # that counts against a small daily budget; without a key or budget the plain rules are used instead.
@@ -126,6 +130,9 @@ class AIConfig:
     triage_batch: int = 80  # job titles per triage request
     triage_calls: int = 4  # most triage requests in one run
     vet_batch: int = 25  # remote jobs per eligibility request
+    requirements: list[str] = field(default_factory=list)  # what a job must satisfy, in plain words (blank = derived from your settings)
+    read_chars: int = 2500  # how much of each posting the AI reads
+    defer_runs: int = 8  # a job that can't be judged yet (posting unread, AI unavailable) waits this many runs, then goes by the plain rules
     helper_seconds: int = 180  # most time one run spends waiting for the AI helpers (a busy AI must not stall the run)
     alert_calls: int = 4  # most job-alert e-mails the AI reads per run (only ones in a layout the plain parser doesn't know)
 
@@ -273,6 +280,7 @@ def parse_config(raw: dict[str, Any]) -> Config:
             keywords=_str_list(body.get("keywords"), f"qualifications.{key}.keywords"),
             enabled=bool(body.get("enabled", True)),
             title_hints=_str_list(body.get("title_hints"), f"qualifications.{key}.title_hints"),
+            guess_filters=bool(body.get("guess_filters", False)),
         ))
 
     notify = raw.get("notify") or {}
@@ -325,6 +333,7 @@ def _parse_postings(body: dict[str, Any]) -> PostingsConfig:
         ai_vision=bool(body.get("ai_vision", True)),
         max_ai_reads=_opt_int(body.get("max_ai_reads", 5), "postings.max_ai_reads") or 0,
         skip_titles=_str_list(body.get("skip_titles"), "postings.skip_titles"),
+        linkedin_max=max(0, _opt_int(body.get("linkedin_max", 15), "postings.linkedin_max") or 0),
     )
 
 
@@ -366,7 +375,10 @@ def _parse_ai(body: dict[str, Any]) -> AIConfig:
         smart_models=_str_list(body.get("smart_models"), "ai.smart_models"),
         profile=str(body.get("profile") or ""),
         min_score=_opt_int(body.get("min_score", 4), "ai.min_score") or 0,
-        batch_size=_opt_int(body.get("batch_size"), "ai.batch_size") or 20,
+        batch_size=min(40, max(1, _opt_int(body.get("batch_size"), "ai.batch_size") or 10)),
+        requirements=_str_list(body.get("requirements"), "ai.requirements"),
+        read_chars=min(8000, max(300, _opt_int(body.get("read_chars", 2500), "ai.read_chars") or 2500)),
+        defer_runs=min(48, max(0, _opt_int(body.get("defer_runs", 8), "ai.defer_runs") or 0)),
         requests_per_minute=_opt_int(body.get("requests_per_minute"), "ai.requests_per_minute") or 8,
         helpers=bool(body.get("helpers", True)),
         daily_budget=max(0, _opt_int(body.get("daily_budget", 30), "ai.daily_budget") or 0),

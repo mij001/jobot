@@ -67,7 +67,7 @@ def job_entry(job: Job, day: date, hidden: bool, cfg: Config) -> dict:
         "source": job.source, "title": job.title, "company": job.company, "location": job.location,
         "url": job.url, "also_on": [list(p) for p in job.also_on], "subfields": list(job.subfields),
         "level": job.level, "qualifications": list(job.qualifications), "qual_guess": job.qual_guess or None, "min_years": job.min_years,
-        "ai_score": job.ai_score, "ai_reason": job.ai_reason, "importance": importance(job, cfg, hidden),
+        "ai_score": job.ai_score, "ai_reason": job.ai_reason, "verdict": job.ai_verdict or job.rule_verdict or None, "importance": importance(job, cfg, hidden),
         "posted": job.posted, "closing": job.closing, "requirements": job.requirements,
         "contact": job.contact, "salary": job.salary, "read_via": job.read_via, "watched": job.watched or None, "remote": job.remote or None, "ai_note": job.ai_note or None,
         # the skills / tools / certificates the advert mentions (drives the dashboard's skill demand)

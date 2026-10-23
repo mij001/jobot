@@ -36,6 +36,35 @@ _NOT_A_DEGREE = re.compile(
 )
 
 
+# Places outside Sri Lanka. Job sites outside Sri Lanka (LinkedIn, its alert e-mails) list jobs the world over, and an
+# alert's text reads "Amazon · Austin, TX 17 school alumni" with the place only inside it.
+_US_STATES = ("AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK "
+              "OR PA RI SC SD TN TX UT VT VA WA WV WI WY DC").split()
+_US_PLACE = re.compile(r"[A-Z][A-Za-z.'-]+(?: [A-Z][A-Za-z.'-]+)*,\s*(?:" + "|".join(_US_STATES) + r")\b(?!\w)")
+_FOREIGN_PLACE = re.compile(
+    r"\b(?:taiwan|taipei|hsinchu|zhubei|taichung|singapore|malaysia|kuala lumpur|penang|india|bengaluru|bangalore|hyderabad|"
+    r"chennai|mumbai|pune|delhi|noida|gurgaon|gurugram|kolkata|china|shenzhen|shanghai|beijing|hong kong|japan|tokyo|"
+    r"osaka|korea|seoul|thailand|bangkok|vietnam|philippines|manila|indonesia|jakarta|bangladesh|dhaka|pakistan|"
+    r"karachi|lahore|nepal|maldives|australia|sydney|melbourne|brisbane|perth|new zealand|auckland|united states|"
+    r"usa|u\.s\.a?\.?|canada|toronto|vancouver|montreal|united kingdom|england|scotland|london|manchester|"
+    r"germany|berlin|munich|france|paris|netherlands|amsterdam|ireland|dublin|spain|italy|sweden|norway|denmark|"
+    r"finland|poland|switzerland|zurich|israel|egypt|nigeria|kenya|south africa|dubai|abu dhabi|sharjah|"
+    r"uae|united arab emirates|qatar|doha|kuwait|saudi arabia|riyadh|jeddah|oman|muscat|bahrain|"
+    r"san jose|san francisco|seattle|boston|new york|chicago|dallas|houston|los angeles|san diego|silicon valley)\b",
+    re.IGNORECASE)
+_SRI_LANKA = re.compile(r"\bsri lanka\b|\bcolombo\b|\b(?:western|central|southern|northern|eastern|uva|sabaragamuwa|"
+                        r"north western|north central) province\b", re.IGNORECASE)
+
+
+def foreign_place(text: str) -> str | None:
+    """The place outside Sri Lanka that `text` names ("Austin, TX", "Hsinchu", "Singapore"), or None. A text that also
+    names Sri Lanka is left alone."""
+    if not text or _SRI_LANKA.search(text):
+        return None
+    m = _US_PLACE.search(text) or _FOREIGN_PLACE.search(text)
+    return m.group(0).strip() if m else None
+
+
 @lru_cache(maxsize=4096)
 def keyword_pattern(keyword: str) -> re.Pattern[str]:
     """Whole-word, case-insensitive pattern; a trailing * matches any word ending."""
@@ -175,8 +204,10 @@ def qualifications_with_source(job: Job, cfg: Config) -> tuple[list[str], bool]:
     found = [q.key for q in cfg.qualifications if matching_keywords(q.keywords, text)]
     if found:
         return found, False
-    guess = [q.key for q in cfg.qualifications if matching_keywords(q.title_hints, job.title)][:1]
-    return guess, bool(guess)
+    guess = [q for q in cfg.qualifications if matching_keywords(q.title_hints, job.title)][:1]
+    if not guess:
+        return [], False
+    return [guess[0].key], not guess[0].guess_filters  # a trade title ("Electrician") counts as asking for that level
 
 
 def classify_qualifications(job: Job, cfg: Config) -> list[str]:
@@ -200,8 +231,10 @@ def is_excluded(job: Job, cfg: Config) -> bool:
         return True
     if job.remote:  # open to Sri Lanka by construction: neither the overseas nor the place filter applies
         return False
-    if not cfg.include_overseas and matching_keywords(cfg.overseas_keywords, f"{job.title}\n{job.location}"):
-        return True
+    if not cfg.include_overseas:
+        where = f"{job.title}\n{job.location}\n{job.company}"
+        if matching_keywords(cfg.overseas_keywords, f"{job.title}\n{job.location}") or foreign_place(where):
+            return True
     if cfg.locations and job.location:
         loc = job.location.lower()
         if not any(want.lower() in loc for want in cfg.locations):
@@ -223,7 +256,9 @@ def explain(job: Job, cfg: Config) -> list[str]:
     if matching_keywords(cfg.exclude_title_keywords, job.title):
         return [f"DROPPED: the title has an excluded word ({', '.join(matching_keywords(cfg.exclude_title_keywords, job.title))})"]
     if is_excluded(job, cfg):
-        return ["DROPPED: employer on your avoid list, or the place/overseas filter"]
+        where = foreign_place(f"{job.title}\n{job.location}\n{job.company}")
+        return [f"DROPPED: the job is outside Sri Lanka ({where})" if where and not cfg.include_overseas else
+                "DROPPED: employer on your avoid list, or the place/overseas filter"]
     preset = [k for k in (job.preset or job.subfields) if (sf := cfg.subfield(k)) and sf.enabled]
     subs = preset + [k for k in match_subfields(job, cfg) if k not in preset]
     everything = replace(cfg, subfields=[replace(s, enabled=True) for s in cfg.subfields])
@@ -247,7 +282,12 @@ def explain(job: Job, cfg: Config) -> list[str]:
     out.append(f"qualification: {', '.join(quals) or 'not stated'}" + (" (only guessed from the title)" if guessed else ""))
     if not qualification_allowed(quals, cfg, guessed):
         return out + ["DROPPED: the advert asks for a qualification you switched off"]
-    return out + ["KEPT"]
+    from . import requirements  # imported here: requirements itself builds on this module
+    verdict, why = requirements.assess(replace(job, subfields=subs), cfg)
+    out.append(f"requirements (plain rules): {verdict} - {why}")
+    if verdict == "no":
+        return out + ["HELD BACK: it fails your requirements (the AI also reads the full posting before anything is sent)"]
+    return out + ["KEPT" + (" (the AI reads the full posting next)" if verdict != "match" else "")]
 
 
 def select_jobs(jobs: list[Job], cfg: Config) -> list[Job]:

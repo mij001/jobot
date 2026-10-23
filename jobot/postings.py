@@ -48,6 +48,7 @@ MAX_BYTES = 8_000_000
 CACHE_TEXT = 2000  # characters of advert text kept in the cache
 CACHE_DAYS = 3  # forget adverts no longer listed for this many days
 BLOCKED = (403, 429, 999)  # stop opening that site's pages for the rest of the run
+GONE = (404, 410, 451)  # the advert's page is gone for good
 
 Vision = Callable[[bytes, str], str]
 
@@ -505,10 +506,13 @@ def enrich(jobs: list[Job], cache: PostingCache, cfg: Config, today: date,
     lock = threading.Lock()
     deadline = time.monotonic() + (cfg.postings.max_seconds if max_seconds is None else min(max_seconds, cfg.postings.max_seconds))
     fresh: list[Job] = []
+    linkedin = 0
     for job in jobs:
         if cache.get(job.uid) is None:
-            if len(fresh) < cfg.postings.max_per_run:
+            is_linkedin = "linkedin.com" in job.url
+            if len(fresh) < cfg.postings.max_per_run and not (is_linkedin and linkedin >= cfg.postings.linkedin_max):
                 fresh.append(job)
+                linkedin += is_linkedin
             else:
                 stats.left += 1
     if vision is not None:
@@ -557,6 +561,8 @@ def enrich(jobs: list[Job], cache: PostingCache, cfg: Config, today: date,
                 continue
             if isinstance(posting, Exception):
                 stats.failed += 1
+                if getattr(getattr(posting, "response", None), "status_code", 0) in GONE:
+                    cache.put(job.uid, Posting(), today)  # the page no longer exists: nothing to wait for
                 continue
             entry = cache.put(job.uid, posting, today)
             stats.opened += 1
@@ -568,4 +574,6 @@ def enrich(jobs: list[Job], cache: PostingCache, cfg: Config, today: date,
             stats.cached += 1
         cache.touch(job.uid, today)
         apply(job, entry, cfg)
+    for job in jobs:
+        job.unread = cache.get(job.uid) is None  # no posting text yet: the judge waits for it (see main.run)
     return stats

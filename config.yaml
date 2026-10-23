@@ -343,7 +343,7 @@ subfields:
       - hardware technician*
 
   technical_sales:
-    enabled: true
+    enabled: false
     label: Technical Sales & Applications
     keywords:
       - sales engineer*
@@ -452,10 +452,12 @@ locations: []
 watch_companies: []
 avoid_companies: []
 
-# Sri Lankan sites also carry many overseas jobs (Gulf, Maldives ...).
-# Set to false to skip ads that mention one of `overseas_keywords` in the
-# title or location.
-include_overseas: true
+# Jobs located outside Sri Lanka are skipped: ads that name a place abroad in
+# the title, location or employer line (a country or city anywhere in the world,
+# or a US "City, ST") and ads that mention one of `overseas_keywords` below.
+# Fully remote jobs open to Sri Lanka are handled separately and never skipped.
+# Set to true to see jobs abroad (Gulf, Maldives ...) too.
+include_overseas: false
 overseas_keywords:
   - foreign job
   - overseas
@@ -629,6 +631,8 @@ qualifications:
 
   vocational:
     enabled: false
+    # "Electrician", "Technician" and the like are trade roles whatever the advert says: the title counts.
+    guess_filters: true
     label: Vocational (NVQ 3–4 / trade certificate)
     keywords:
       - nvq level 1
@@ -1073,6 +1077,9 @@ sources:
 # ===========================================================================
 postings:
   enabled: true
+  # LinkedIn stops answering after a few dozen pages in a short time: open at most this many of its adverts per run
+  # (the rest wait for the next run instead of being judged on a title alone).
+  linkedin_max: 15
   # Most new pages opened per run; the rest wait for the next run. They are opened
   # `workers` at a time (reading a poster with OCR takes ~15 s) and never for longer
   # than `max_seconds` in all, so a run stays quick even right after new sites were added.
@@ -1129,15 +1136,25 @@ ai:
   # your key). The report on the dashboard names the model that answered.
   smart_models: []
   profile: |
-    Electrical & Electronic Engineering (EEE) degree holder (BSc) in Sri Lanka
-    looking for degree-level engineering jobs in power, electronics, automation, telecom and related
-    fields. Prefer engineer / trainee-engineer roles, but also consider graduate / associate / assistant
-    engineer roles whose field isn't stated (including IT infrastructure, operations, network, NOC and
-    reliability / SRE roles), and technical-officer roles in electrical, electronic or telecom work: score
-    those "worth a look" (4-6) rather than rejecting them. Score pure software development, sales, finance,
-    clerical and civil / mechanical-only roles low. Open to internships and entry- to mid-level positions.
-  min_score: 4
-  batch_size: 20 # jobs per AI request
+    Electrical & Electronic Engineering (EEE) degree holder (BSc) in Sri Lanka, looking for degree-level
+    engineering jobs in electronics, telecom, power and related fields. Prefers engineer / trainee-engineer
+    roles. Open to internships and entry- to mid-level positions.
+  # What a job MUST satisfy, in plain words. The AI reads every posting against these, and the plain rules check
+  # the same things when the AI is unavailable. Left blank they are worded from the settings above (sub-fields,
+  # experience levels, education, include_overseas). Write your own to change what counts, for example:
+  #   requirements:
+  #     - "Qualification: open to a BSc / BEng graduate in electrical, electronic or telecom engineering."
+  #     - "Work: electronics, embedded, telecom, power or control engineering. Not software, IT support, sales or admin."
+  #     - "Level: internship, entry level or up to 3 years of experience."
+  #     - "Place: Sri Lanka, or fully remote and open to Sri Lanka."
+  requirements: []
+  # A job whose posting couldn't be opened yet, or that the AI couldn't be asked about (quota, outage), is not
+  # sent half-checked: it waits and is judged on a later run, up to this many runs, then the plain rules decide.
+  defer_runs: 8
+  # How many characters of each posting the AI reads.
+  read_chars: 2500
+  min_score: 5   # jobs the AI scores below this are held back ("5" = worth a look)
+  batch_size: 10 # jobs per AI request: the AI reads each posting, so keep this small
   requests_per_minute: 8 # stay under the free-tier limit
 
   # "Helpers": judgment calls keywords can't make. Each is one batched request whose answers are remembered

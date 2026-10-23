@@ -29,7 +29,7 @@ from pathlib import Path
 
 import requests
 
-from . import ai
+from . import ai, requirements
 from .config import Config
 from .filters import is_excluded
 from .models import Job
@@ -154,11 +154,14 @@ testing, technical sales or teaching in those fields - including generic titles 
 only, software development only, sales, accounting, drivers, clerical, hospitality and so on. When it is plausible but unclear,
 say yes.
 
-Graduate-level engineer roles whose title names no field ("Associate Engineer", "Graduate / Trainee / Junior / Assistant
-Engineer", "Engineer - TechOps") are how engineering graduates of any branch are hired: say yes to them, including IT
-infrastructure, operations, network and reliability (SRE / NOC / platform) roles, which EEE graduates commonly take (use the
-networking sub-field for those, "general" when nothing fits better). Technical-officer and technician roles are yes when they
-concern electrical, electronic or telecom systems.
+The seeker's requirements, which every selected job will later be read against (the full posting is read then):
+{requirements}
+
+Selecting is only the first step: say yes to a graduate-level engineer title that names no field ("Associate Engineer",
+"Graduate / Trainee / Junior / Assistant Engineer") unless the company or snippet already shows the work is software
+development, IT help-desk or support, cloud / Microsoft 365 administration, sales, finance, admin or civil / mechanical only
+(use the networking sub-field for network operations, "general" when nothing fits better). Technical-officer roles are yes
+when they concern electrical, electronic or telecom systems. Say no to jobs located outside Sri Lanka unless fully remote.
 
 The sub-fields you may use for "field" (key: meaning):
 {fields}
@@ -299,7 +302,7 @@ class Helpers:
         todo.sort(key=priority)  # likelier ones first: a long queue must not starve the jobs that matter
         if todo and self.on:
             label = "\n".join(f"{k}: {v}" for k, v in fields.items())
-            system = TRIAGE_PROMPT.format(fields=label)
+            system = TRIAGE_PROMPT.format(fields=label, requirements="\n".join(f"- {line}" for line in requirements.lines(cfg)))
             for start in range(0, min(len(todo), cfg.ai.triage_batch * cfg.ai.triage_calls), cfg.ai.triage_batch):
                 batch = todo[start:start + cfg.ai.triage_batch]
                 items = [{"id": j.uid, "title": j.title, "company": j.company, "site": j.source, "category": j.category[:40],
@@ -338,6 +341,7 @@ class Helpers:
 
     def _rescue(self, job: Job, sub: str, fields: dict[str, str], why: str = "", unchecked: bool = False) -> None:
         job.preset = [sub] if sub else []
+        job.rescued = "rule" if unchecked else "ai"
         if unchecked:
             job.ai_note = "Associate / graduate engineer role: the title names no field, so check it suits EEE"
         else:

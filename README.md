@@ -523,6 +523,35 @@ or `daily` / `off`) adds the "Your week" block and suggestions, and
   not to visit (`robots.txt`). Pages you add under `sources.company_pages.pages`
   are only visited when their `robots.txt` allows it.
 
+### How a job is judged
+
+A keyword match only gets a job *considered*. Before anything is sent, each new
+job is read against your **requirements** – four plain sentences (qualification,
+work, level, place), worded from your settings and editable as `ai.requirements`
+in `config.yaml` – in this order:
+
+1. **Plain rules** (free, always on): a sales role, software or IT-desk work, a
+   job whose long posting mentions nothing electrical / electronic / telecom,
+   a trade title ("Electrician", "Technician") – turned away without asking the AI.
+2. **The AI reads the posting.** LinkedIn adverts are opened through its public
+   posting page (up to `postings.linkedin_max` = 15 a run), other sites' pages and
+   posters are read as before, and the AI gets up to `ai.read_chars` (2500)
+   characters of the real text, ten jobs at a time, with the requirements. It
+   answers **match / maybe / no** and the one-line reason it found in the text
+   ("Windows server administration, no electrical work"). A **no** is held back
+   whatever the score, and `ai.min_score` (5) holds back weak "maybes".
+3. **Waiting.** A job whose posting couldn't be opened yet (LinkedIn limits, a slow
+   site), or that the AI couldn't be asked about (quota, outage), is **not sent
+   half-checked**: it waits and is judged on a later run – up to `ai.defer_runs`
+   (8) runs, about four hours – and then the plain rules decide. The message
+   footer says how many are waiting.
+
+The last dry run showed what this fixes: jobs in Texas, Taiwan and Singapore
+scored 8/10 because nothing checked the place; "Sales Engineer – Industrial
+Automation" passed on the word *automation*; IT-support and Microsoft 365 roles
+got in as "engineer" titles. Jobs the keywords never matched can still be found
+(the AI triage) – but only reach you if their posting meets the requirements.
+
 ### A posting you saw never arrived
 
 Every site goes through the same checks, so one question finds the cause:
@@ -539,17 +568,14 @@ things used to lose postings, and are fixed:
 * **A guess hid a match.** "Technical Officer" made a telecom job a diploma job,
   which is switched off; see [Qualification](#qualification-degree--diploma).
 * **Titles that name no field** ("Associate Engineer - TechOps", "Associate
-  Engineer – Platform SRE") match no keyword. They go to the AI triage, which now
+  Engineer – Platform SRE") match no keyword. They go to the AI triage, which
   asks about engineer roles first (a long queue of technician and executive titles
-  used to starve them), and any associate / graduate / trainee / junior /
-  assistant engineer role is **kept even when the AI is out of quota**, with the
-  note "check it suits EEE".
-* **The AI review held them back.** Jobs scoring under `ai.min_score` are not sent.
-  The profile now treats generic associate / assistant engineer roles and
-  electrical, electronic or telecom technical-officer roles as "worth a look", the
-  message footer names the best of the held-back jobs ("Held back as poor fits,
-  closest first: …"), the run log lists every one with its score and reason, and
-  they stay on the dashboard tagged *hidden by AI*.
+  used to starve them), so that their posting gets **read and judged** (see
+  [How a job is judged](#how-a-job-is-judged)) instead of the title deciding.
+* **The review held them back.** Whatever fails your requirements is held back;
+  the message footer names the closest ones ("Held back (not matching your
+  requirements), closest first: …"), the run log lists every one with its reason,
+  and they stay on the dashboard tagged *held back*.
 * **The same job twice.** A LinkedIn job found by the search and again in an alert
   e-mail is sent once, under the site's own listing.
 * **The search never asked for them.** LinkedIn only searched EEE titles; it now
@@ -660,8 +686,11 @@ One more can't be switched on from here, because it needs a computer of yours:
 ### Other options
 
 * `locations: [Colombo, Gampaha]` sends only jobs in those places.
-* `include_overseas: false` skips Gulf, Maldives and other overseas ads,
-  which Sri Lankan sites carry a lot of.
+* `include_overseas: false` (the default) skips every job located outside Sri
+  Lanka: the Gulf, Maldives, and any country or city named in the title, location
+  or employer line ("Hsinchu", "Singapore", "Austin, TX" …) – LinkedIn and its
+  alert e-mails list jobs from all over the world. Fully remote jobs open to Sri
+  Lanka are handled separately and kept. Set it to `true` to see jobs abroad too.
 * `sources:` turns sites on or off, picks categories/sectors, and sets the searches
   (LinkedIn, ikman, Rooster, Jobicy …).
 * `schedule:` sets the hour of the daily run and how many sites are read at once.

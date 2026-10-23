@@ -657,11 +657,3 @@ def test_the_same_linkedin_job_from_the_search_and_an_alert_email_is_sent_once(c
     assert mail.fingerprint == card.fingerprint
     (kept,) = select_jobs([mail, card], cfg)
     assert kept is card and kept.also_on == [("Email alert (linkedin.com)", mail.url)]  # the clean listing wins, the e-mail is a link
-
-
-def test_held_back_jobs_are_named_in_the_message_footer():
-    held = [job(f"Role {i}", company="Co") for i in range(6)]
-    for i, j in enumerate(held):
-        j.ai_score = 3
-    note = jobot_main._held_note(held)
-    assert note.startswith("Held back as poor fits, closest first: Role 0 · Co (3/10)") and "(+2 more on the dashboard)" in note
