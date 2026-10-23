@@ -80,6 +80,13 @@ def title_says_eee(job: Job, cfg: Config) -> bool:
     return any(matching_keywords(sf.keywords, job.title) for sf in cfg.enabled_subfields)
 
 
+def evidence_terms(job: Job, cfg: Config) -> set[str]:
+    """Electrical / electronic / telecom words in the posting text (and your sub-fields' own keywords)."""
+    text = f"{job.description}\n{job.category}"
+    found = {m.group(0).lower() for m in EVIDENCE.finditer(text)}
+    return found | distinct_hits(sorted({k for sf in cfg.enabled_subfields for k in sf.keywords}), text)
+
+
 def assess(job: Job, cfg: Config) -> tuple[str, str]:
     """(verdict, reason) from plain rules: "no" when the job clearly isn't EEE work, "match" when its own title names an
     EEE field, "maybe" when nothing fails but the posting doesn't settle it."""
@@ -92,8 +99,7 @@ def assess(job: Job, cfg: Config) -> tuple[str, str]:
         return "no", "not engineering work"
     if SOFTWARE.search(title) and not HARDWAREISH.search(title) and not says:
         return "no", "software / IT work, not electrical or electronic"
-    evidence = {m.group(0).lower() for m in EVIDENCE.finditer(text)}
-    evidence |= distinct_hits(sorted({k for sf in cfg.enabled_subfields for k in sf.keywords}), text)  # your own sub-field words
+    evidence = evidence_terms(job, cfg)
     if says and not job.rescued:
         return "match", "the title names an EEE field"
     if len(job.description) >= _MIN_TEXT and not evidence and not says:

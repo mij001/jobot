@@ -348,3 +348,18 @@ def test_run_holds_back_misses_and_defers_the_unreadable(tmp_path, monkeypatch, 
     assert jobot_main.run(args) == 0
     assert sorted(j.title for j in sent[1].jobs) == ["Electrical Engineer", "Power Engineer"]
     assert "deferred" not in json.loads((tmp_path / "schedule.json").read_text())
+
+
+def test_a_rescued_job_with_no_electrical_evidence_is_not_let_in_on_a_maybe(cfg, tmp_path):
+    piling = job("Trainee Engineers", description="Trainee engineers needed for our shoring and piling projects.", company="Rohana Shoring & Piling")
+    piling.rescued = "rule"
+    real = job("Associate Engineer", description="Install and test low-voltage switchgear and PLC panels. " * 4)
+    real.rescued = "ai"
+    out = run_judge(cfg, tmp_path, [piling, real], FakeReview({"Trainee Engineers": "maybe", "Associate Engineer": "maybe"}))
+    assert [j.title for j in out.shown] == ["Associate Engineer"] and out.held == [piling]
+    assert "doesn't show electrical" in piling.ai_reason
+
+
+@pytest.mark.parametrize("text", ["FPGA Engineer GMV · Lisbon, Lisbon, Portugal · Email alert (linkedin.com)", "RF Engineer · Europe", "Hardware Engineer · Atlanta"])
+def test_more_places_abroad(cfg, text):
+    assert filters.foreign_place(text)

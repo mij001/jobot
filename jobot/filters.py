@@ -50,7 +50,13 @@ _FOREIGN_PLACE = re.compile(
     r"germany|berlin|munich|france|paris|netherlands|amsterdam|ireland|dublin|spain|italy|sweden|norway|denmark|"
     r"finland|poland|switzerland|zurich|israel|egypt|nigeria|kenya|south africa|dubai|abu dhabi|sharjah|"
     r"uae|united arab emirates|qatar|doha|kuwait|saudi arabia|riyadh|jeddah|oman|muscat|bahrain|"
-    r"san jose|san francisco|seattle|boston|new york|chicago|dallas|houston|los angeles|san diego|silicon valley)\b",
+    r"san jose|san francisco|seattle|boston|new york|chicago|dallas|houston|los angeles|san diego|silicon valley|"
+    r"austin|atlanta|phoenix|denver|portland|raleigh|santa clara|sunnyvale|mountain view|palo alto|cupertino|fremont|"
+    r"milpitas|irvine|boulder|minneapolis|detroit|pittsburgh|philadelphia|washington dc|"
+    r"portugal|lisbon|porto|czech|prague|romania|bucharest|hungary|budapest|austria|vienna|belgium|brussels|greece|athens|"
+    r"turkey|istanbul|russia|moscow|ukraine|kyiv|brazil|argentina|mexico|chile|colombia|peru|ghana|morocco|tunisia|"
+    r"ethiopia|uganda|tanzania|jordan|lebanon|iraq|iran|cyprus|malta|luxembourg|estonia|latvia|lithuania|cambodia|"
+    r"myanmar|mongolia|kazakhstan|uzbekistan|brunei|europe|emea|apac|latam|north america)\b",
     re.IGNORECASE)
 _SRI_LANKA = re.compile(r"\bsri lanka\b|\bcolombo\b|\b(?:western|central|southern|northern|eastern|uva|sabaragamuwa|"
                         r"north western|north central) province\b", re.IGNORECASE)
@@ -232,8 +238,8 @@ def is_excluded(job: Job, cfg: Config) -> bool:
     if job.remote:  # open to Sri Lanka by construction: neither the overseas nor the place filter applies
         return False
     if not cfg.include_overseas:
-        where = f"{job.title}\n{job.location}\n{job.company}"
-        if matching_keywords(cfg.overseas_keywords, f"{job.title}\n{job.location}") or foreign_place(where):
+        where = f"{job.title}\n{job.location}"  # (an alert e-mail puts "Employer · Austin, TX" in the title)
+        if matching_keywords(cfg.overseas_keywords, where) or foreign_place(where):
             return True
     if cfg.locations and job.location:
         loc = job.location.lower()
@@ -256,7 +262,7 @@ def explain(job: Job, cfg: Config) -> list[str]:
     if matching_keywords(cfg.exclude_title_keywords, job.title):
         return [f"DROPPED: the title has an excluded word ({', '.join(matching_keywords(cfg.exclude_title_keywords, job.title))})"]
     if is_excluded(job, cfg):
-        where = foreign_place(f"{job.title}\n{job.location}\n{job.company}")
+        where = foreign_place(f"{job.title}\n{job.location}")
         return [f"DROPPED: the job is outside Sri Lanka ({where})" if where and not cfg.include_overseas else
                 "DROPPED: employer on your avoid list, or the place/overseas filter"]
     preset = [k for k in (job.preset or job.subfields) if (sf := cfg.subfield(k)) and sf.enabled]

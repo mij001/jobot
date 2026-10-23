@@ -71,6 +71,13 @@ def judge(kept: list[Job], cfg: Config, env: dict[str, str], schedule: Schedule,
             waiting.append(job)
             waiting_uids.add(job.uid)
 
+    # A job the keywords never placed (picked by the AI triage or kept as a generic "Associate Engineer") has to show
+    # electrical / electronic / telecom work in its posting; "maybe, the text is too short" is not enough for it.
+    for job in kept:
+        if job.rescued and job.ai_verdict == "maybe" and not requirements.evidence_terms(job, cfg):
+            job.ai_verdict, job.ai_score = "no", min(job.ai_score if job.ai_score is not None else 4, 4)
+            job.ai_reason = "the posting doesn't show electrical, electronic or telecom work"
+
     out.waiting = waiting
     judged = [j for j in kept if j.uid not in waiting_uids]
     out.held = sorted((j for j in judged if ai.is_hidden(j, cfg)), key=lambda j: -(j.ai_score or 0))
