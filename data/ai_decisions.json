@@ -551,6 +551,7 @@
 "ikman.lk:6ab3af16dc69e7f112d39e5e": "n:20261024",
 "ikman.lk:6ab4b1342694d0baa2478a8e": "n:20261022",
 "ikman.lk:6ab4bb028cc8684bbd511d35": "n:20261024",
+"ikman.lk:6ab4bf5972a4eb146b478b5d": "n:20261024",
 "ikman.lk:6ab4fda6c141cafe6f3b9f45": "n:20261022",
 "ikman.lk:6ab9f5ca23f823a546523823": "n:20261024",
 "ikman.lk:6aba6fb901eb59d6a81645dd": "n:20261021",
@@ -1616,6 +1617,7 @@
 "topjobs.lk:1563311": "n:20261024",
 "topjobs.lk:1563312": "n:20261024",
 "topjobs.lk:1563320": "n:20261024",
+"topjobs.lk:1563323": "y:general:20261024",
 "topjobs.lk:1563329": "n:20261024",
 "topjobs.lk:1563332": "n:20261024",
 "topjobs.lk:1563338": "n:20261024",
@@ -1664,7 +1666,11 @@
 "topjobs.lk:1563618": "n:20261024",
 "topjobs.lk:1563619": "n:20261024",
 "topjobs.lk:1563620": "n:20261024",
+"topjobs.lk:1563628": "n:20261024",
+"topjobs.lk:1563630": "n:20261024",
 "topjobs.lk:1563631": "n:20261024",
+"topjobs.lk:1563648": "y:general:20261024",
+"topjobs.lk:1563649": "n:20261024",
 "topjobs.lk:1563657": "n:20261024",
 "topjobs.lk:1563661": "n:20261024"
 }
