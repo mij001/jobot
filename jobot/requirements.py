@@ -76,15 +76,26 @@ def lines(cfg: Config) -> list[str]:
                + (f"; a job that asks only for {' / '.join(unwanted).lower()} level qualifications, or for a degree in an unrelated "
                   "field, doesn't match" if unwanted else "") + ".")
     fields = "; ".join(s.label for s in cfg.enabled_subfields)
-    out.append("Work: engineering work in these fields - " + fields + ". Pure software development, IT help-desk, user or "
-               "application support, cloud / Microsoft 365 administration, sales, finance, admin, HR, supply chain, civil- or "
-               "mechanical-only work and other non-EEE jobs don't match. A generic title (\"Associate Engineer\", \"Technical "
-               "Officer\") matches only when the posting shows electrical, electronic, telecom, network-hardware or control work.")
+    networking = any(sf.key == "networking" for sf in cfg.enabled_subfields)
+    out.append("Work: engineering work in these fields - " + fields + "."
+               + (" Network engineering and network administration (routing, switching, telecom and data networks) count as the "
+                  "Networking field." if networking else "")
+               + " Pure software development, IT help-desk, user or application support, desktop / server / cloud / Microsoft 365 "
+               "administration, ERP, sales, finance, admin, HR, supply chain, civil- or mechanical-only work and other non-EEE jobs "
+               "don't match. A generic title (\"Associate Engineer\", \"Technical Officer\") matches only when the posting shows "
+               "electrical, electronic, telecom, network-hardware or control work.")
     levels = [lv for lv in cfg.enabled_levels]
     if levels:
+        def span(lv):
+            if lv.min_years is None:
+                return lv.label
+            return f"{lv.label} ({lv.min_years}-{lv.max_years} years of experience)" if lv.max_years is not None else \
+                f"{lv.label} ({lv.min_years}+ years)"
+
         capped = [lv.max_years for lv in levels if lv.max_years is not None]
-        reach = f" (up to about {max(capped)} years of experience asked)" if len(capped) == len(levels) and capped else ""
-        out.append("Level: " + ", ".join(lv.label for lv in levels) + reach + ". Jobs above that level don't match.")
+        limit = f" Asking for more than {max(capped)} years of experience, or a senior / lead / manager role, doesn't match." \
+            if capped and len(capped) >= len([lv for lv in levels if lv.min_years is not None]) else " Jobs above that level don't match."
+        out.append("Level: " + "; ".join(span(lv) for lv in levels) + "." + limit)
     out.append("Place: located in Sri Lanka, or fully remote and open to someone living in Sri Lanka."
                + (" Jobs abroad are acceptable too." if cfg.include_overseas else " A job that needs relocating abroad doesn't match."))
     return out

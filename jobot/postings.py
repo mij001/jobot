@@ -336,7 +336,7 @@ def reader_for(url: str):
 
 def page_url(url: str) -> str:
     """The URL to fetch: LinkedIn's public posting endpoint instead of the login-walled page."""
-    if m := re.search(r"linkedin\.com/jobs/view/(?:[^/]*-)?(\d+)", url):
+    if m := re.search(r"linkedin\.com/(?:comm/)?jobs/view/(?:[^/?]*-)?(\d+)", url):
         return f"https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/{m.group(1)}"
     return url
 

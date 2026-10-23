@@ -406,3 +406,25 @@ def test_a_bare_lecturer_post_needs_electrical_content_in_the_posting(cfg, tmp_p
     assert requirements.assess(bare, cfg)[0] == "maybe" and requirements.assess(eee, cfg)[0] == "maybe"
     out = run_judge(cfg, tmp_path, [bare, eee], FakeReview(), env={})
     assert out.shown == [eee] and out.held == [bare]
+
+
+def test_the_level_requirement_states_the_years_from_your_settings(cfg):
+    text = " ".join(requirements.lines(cfg))
+    assert "Mid level (2-4 years of experience)" in text and "more than 4 years" in text
+    assert "Network engineering and network administration" in text
+
+
+def test_linkedin_alert_links_are_cleaned_and_can_be_read(cfg):
+    from email.message import EmailMessage
+
+    from jobot.sources import mailbox
+
+    msg = EmailMessage()
+    msg["From"], msg["Subject"] = "LinkedIn <jobs-noreply@linkedin.com>", "Jobs for you"
+    msg.set_content("x")
+    msg.add_alternative('<a href="https://www.linkedin.com/comm/jobs/view/4480962453/?trackingId=abc%3D%3D&amp;trk=eml-x">'
+                        'Engineer I NPI</a><a href="https://www.linkedin.com/comm/jobs/view/4471983716?trk=y">Jobs similar to FPGA Engineer</a>',
+                        subtype="html")
+    (j,) = mailbox.parse_message(msg.as_bytes(), ["linkedin.com"])
+    assert j.url == "https://www.linkedin.com/jobs/view/4480962453/" and j.title == "Engineer I NPI"
+    assert postings.page_url("https://www.linkedin.com/comm/jobs/view/4480962453?trk=x").endswith("/jobPosting/4480962453")

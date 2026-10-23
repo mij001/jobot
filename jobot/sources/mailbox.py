@@ -74,6 +74,15 @@ def _real_url(href: str) -> str:
     return href
 
 
+_LINKEDIN_VIEW = re.compile(r"https?://(?:[\w-]+\.)?linkedin\.com/(?:comm/)?jobs/view/(?:[\w-]*-)?(\d{6,})")
+
+
+def _canonical(href: str) -> str:
+    """A LinkedIn e-mail link carries tracking junk and goes through /comm/; the plain posting address can be opened and read."""
+    m = _LINKEDIN_VIEW.match(href)
+    return f"https://www.linkedin.com/jobs/view/{m.group(1)}/" if m else href
+
+
 def _domain(host: str) -> str:
     bits = host.lower().split(".")
     return ".".join(bits[-2:]) if len(bits) >= 2 else host.lower()
@@ -101,7 +110,7 @@ def parse_message(raw: bytes, sender_domains: list[str], extract=None) -> list[J
     pattern = next((p for d, p in _JOB_PATH.items() if d in domain.lower()), _GENERIC)
     jobs, seen = [], set()
     for a in soup.find_all("a", href=True):
-        href = _real_url(unescape(a["href"]).strip())
+        href = _canonical(_real_url(unescape(a["href"]).strip()))
         if not href.startswith(("http://", "https://")):
             continue
         text = " ".join(a.get_text(" ", strip=True).split())
