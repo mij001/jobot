@@ -60,9 +60,10 @@ READ the text, not just the title. For EVERY advert return:
 - "verdict": "match" when the advert meets every requirement as far as the text shows; "maybe" when nothing clearly fails
   but something important is not stated (e.g. only a short snippet was available); "no" when at least one requirement
   clearly fails. Be strict - never stretch a requirement to let a job in, and never let a famous employer or a good-sounding
-  title decide. A job in another country, a software / IT-support / systems-administration job, a technician or trade job,
-  or one that needs far more experience than allowed is "no".
-- "failed": the requirements that clearly fail, from "qualification", "work", "level", "place" (empty unless verdict is "no")
+  title decide. A job in another country, a software / IT-support / systems-administration job, or a technician or trade job
+  is "no". Experience level is checked separately by the program from the years the advert names: report it in "level" but
+  NEVER answer "no" because of the experience asked for.
+- "failed": the requirements that clearly fail, from "qualification", "work", "place" (empty unless verdict is "no")
 - "score": integer 0-10 consistent with the verdict: "no" 0-4, "maybe" 5-6, "match" 7-10 (10 = ideal)
 - "level": one of {levels}, or "unknown" if the advert doesn't make it clear
 - "qualification": list of the qualification levels the advert accepts, from
@@ -365,7 +366,7 @@ def _review(jobs, cfg, env, post, sleep, profile_extra="") -> ReviewResult:
     qual_keys = [q.key for q in cfg.qualifications]
     system = SYSTEM_PROMPT.format(levels=", ".join(f'"{k}"' for k in level_keys),
                                   quals=", ".join(f'"{k}"' for k in qual_keys) or '"degree", "diploma"',
-                                  requirements="\n".join(f"{n}. {line}" for n, line in enumerate(reqs.lines(cfg), 1)))
+                                  requirements="\n".join(f"{n}. {line}" for n, line in enumerate(reqs.lines(cfg, level=False), 1)))
     gap = 60.0 / max(1, cfg.ai.requests_per_minute)
     batch_size = max(1, cfg.ai.batch_size)
 

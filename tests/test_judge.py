@@ -428,3 +428,9 @@ def test_linkedin_alert_links_are_cleaned_and_can_be_read(cfg):
     (j,) = mailbox.parse_message(msg.as_bytes(), ["linkedin.com"])
     assert j.url == "https://www.linkedin.com/jobs/view/4480962453/" and j.title == "Engineer I NPI"
     assert postings.page_url("https://www.linkedin.com/comm/jobs/view/4480962453?trk=x").endswith("/jobPosting/4480962453")
+
+
+def test_the_ai_is_not_asked_to_judge_experience_level(cfg):
+    assert any(line.startswith("Level:") for line in requirements.lines(cfg))
+    assert not any(line.startswith("Level:") for line in requirements.lines(cfg, level=False))
+    assert "NEVER answer \"no\" because of the experience asked for" in ai.SYSTEM_PROMPT

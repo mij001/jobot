@@ -64,8 +64,9 @@ SALES = re.compile(r"\b(?:sales|pre-?sales|marketing|business development|accoun
 _MIN_TEXT = 400  # a posting shorter than this says too little to be held against a job
 
 
-def lines(cfg: Config) -> list[str]:
-    """The requirements, one per line. `ai.requirements` if set; otherwise worded from the settings."""
+def lines(cfg: Config, level: bool = True) -> list[str]:
+    """The requirements, one per line. `ai.requirements` if set; otherwise worded from the settings. `level=False` leaves
+    out the experience level (the AI isn't asked about it: filters.py checks it from the years the posting names)."""
     if cfg.ai.requirements:
         return list(cfg.ai.requirements)
     out = []
@@ -84,7 +85,7 @@ def lines(cfg: Config) -> list[str]:
                "administration, ERP, sales, finance, admin, HR, supply chain, civil- or mechanical-only work and other non-EEE jobs "
                "don't match. A generic title (\"Associate Engineer\", \"Technical Officer\") matches only when the posting shows "
                "electrical, electronic, telecom, network-hardware or control work.")
-    levels = [lv for lv in cfg.enabled_levels]
+    levels = [lv for lv in cfg.enabled_levels] if level else []
     if levels:
         def span(lv):
             if lv.min_years is None:

@@ -539,7 +539,9 @@ in `config.yaml` – in this order:
    characters of the real text, ten jobs at a time, with the requirements. It
    answers **match / maybe / no** and the one-line reason it found in the text
    ("Windows server administration, no electrical work"). A **no** is held back
-   whatever the score, and `ai.min_score` (5) holds back weak "maybes".
+   whatever the score, and `ai.min_score` (5) holds back weak "maybes". It is not
+   asked to judge experience: your levels (Entry 0-1 years, Mid 2-4 …) are applied
+   by the program from the years the advert names.
 3. **Waiting.** A job whose posting couldn't be opened yet (LinkedIn limits, a slow
    site), or that the AI couldn't be asked about (quota, outage), is **not sent
    half-checked**: it waits and is judged on a later run – up to `ai.defer_runs`
