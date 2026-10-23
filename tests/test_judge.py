@@ -204,7 +204,13 @@ def test_a_waiting_job_is_judged_on_what_exists_after_enough_tries(cfg, tmp_path
     for _ in range(3):
         schedule.put_off(j.uid, TODAY.isoformat())
     out = judge.judge([j], cfg, {}, schedule, review=FakeReview())
-    assert out.waiting == [] and out.shown == [j]
+    assert out.waiting == [] and out.shown == []  # still nothing shows electrical work: not sent
+    assert out.held == [j] and "nothing in the title or posting" in j.ai_reason
+    keyword = job("Telecom Engineer")
+    keyword.unread = True
+    for _ in range(3):
+        schedule.put_off(keyword.uid, TODAY.isoformat())
+    assert judge.judge([keyword], cfg, {}, schedule, review=FakeReview()).shown == [keyword]  # a title naming a field is enough
 
 
 def test_when_the_ai_cannot_answer_uncertain_jobs_wait_and_clear_ones_go(cfg, tmp_path):
@@ -215,9 +221,11 @@ def test_when_the_ai_cannot_answer_uncertain_jobs_wait_and_clear_ones_go(cfg, tm
 
 
 def test_without_an_ai_key_the_plain_rules_decide_and_nothing_waits(cfg, tmp_path):
-    jobs = [job("Associate Engineer"), job("Marketing Executive"), job("Electrical Engineer")]
+    jobs = [job("Associate Engineer", description="Test and commission PLC control panels and switchgear. " * 6),
+            job("Associate Engineer", source_id="x2"), job("Marketing Executive"), job("Electrical Engineer")]
     out = run_judge(cfg, tmp_path, jobs, FakeReview(), env={})
-    assert [j.title for j in out.shown] == ["Associate Engineer", "Electrical Engineer"] and [j.title for j in out.held] == ["Marketing Executive"]
+    assert [j.title for j in out.shown] == ["Associate Engineer", "Electrical Engineer"] and out.shown[0].description
+    assert sorted(j.title for j in out.held) == ["Associate Engineer", "Marketing Executive"]  # the one with no text shows nothing
     assert out.waiting == []
 
 
@@ -363,3 +371,38 @@ def test_a_rescued_job_with_no_electrical_evidence_is_not_let_in_on_a_maybe(cfg,
 @pytest.mark.parametrize("text", ["FPGA Engineer GMV · Lisbon, Lisbon, Portugal · Email alert (linkedin.com)", "RF Engineer · Europe", "Hardware Engineer · Atlanta"])
 def test_more_places_abroad(cfg, text):
     assert filters.foreign_place(text)
+
+
+@pytest.mark.parametrize("title", [
+    "IT Executive - Chilaw", "IT Assistant / IT Executive", "Executive - IT", "IT Support Specialist (Hard Ware)",
+    "Executive - Information Technology", "IT and Digital Services Officer", "AI Transformation Officer",
+    "Information Security Engineer", "Server Support Engineer", "Customer Support Engineer",
+    "Education & Enablement Specialist (Technical Writer)", "Graphic Designer | IT Hardware & Social Media Administrator",
+    "Executive - Purchase", "Assistant Lecturer - IT ( Badulla Branch)", "Lecturer - IT ( Galle Branch)",
+    "Visiting Lecturers - IT | Networking | Software Engineering | Cyber Security", "IoT Data Engineer",
+])
+def test_it_office_and_other_non_eee_titles_are_turned_away_by_the_rules(cfg, title):
+    assert requirements.assess(job(title, source="topjobs.lk"), cfg)[0] == "no"
+
+
+@pytest.mark.parametrize("title", [
+    "Electrical Engineer", "Network Engineer", "ELV Engineer", "Embedded Engineer", "Lecturer - Electrical Engineering",
+    "Project Engineer - BMS | ELV", "UPS Engineer", "Core Network Engineer", "Maintenance Engineer", "Electronics Engineer (m/f/d)",
+    "Solar Electrical Engineer (O&M)", "Network Administrator",
+])
+def test_real_eee_titles_pass_the_rules(cfg, title):
+    assert requirements.assess(job(title, source="topjobs.lk"), cfg)[0] in ("match", "maybe")
+
+
+def test_an_it_title_with_real_electrical_content_in_the_posting_is_not_turned_away(cfg):
+    j = job("IT Support Engineer", description="Install, test and repair routers, switches, UPS units and structured cabling on site. " * 4)
+    assert requirements.assess(j, cfg)[0] == "maybe"
+
+
+def test_a_bare_lecturer_post_needs_electrical_content_in_the_posting(cfg, tmp_path):
+    bare = job("POST OF LECTURER (ON CONTRACT)", source="gazette.lk")
+    eee = job("POST OF LECTURER (ON CONTRACT)", source="gazette.lk", source_id="2",
+              description="Department of Electrical and Electronic Engineering seeks a lecturer in power systems and electronics. " * 3)
+    assert requirements.assess(bare, cfg)[0] == "maybe" and requirements.assess(eee, cfg)[0] == "maybe"
+    out = run_judge(cfg, tmp_path, [bare, eee], FakeReview(), env={})
+    assert out.shown == [eee] and out.held == [bare]

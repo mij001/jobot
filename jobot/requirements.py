@@ -21,8 +21,22 @@ from .models import Job
 NOT_TECH = re.compile(r"\b(?:sales|marketing|account\w*|finance|financial|hr|human resources?|driver|cook|chef|waiter|nurse|"
                       r"cashier|clerk|receptionist|secretary|audit\w*|legal|teacher|pre[\s-]?school|beautician|tailor|"
                       r"security guard|cleaner|helper|packing|merchandiser|customer service|telesales|data entry|"
-                      r"content writer|graphic|hotel|hospitality|insurance|banking|recruit\w*|admin\w*|inventory|"
-                      r"supply chain|procurement|logistics|warehouse|store ?keeper|compliance|governance|brand)\b", re.I)
+                      r"content writer|graphic|designer? \(graphic|hotel|hospitality|insurance|banking|recruit\w*|admin\w*|"
+                      r"inventory|supply chain|procurement|purchas\w*|logistics|warehouse|store ?keeper|compliance|governance|"
+                      r"brand|social media|tutor|teaching)\b", re.I)
+# The words that make a title "electrical / electronic / telecom" for sure (HARDWAREISH also has "hardware", "control" …).
+STRICT_EEE = re.compile(r"\b(?:electr\w*|telecom\w*|embedded|firmware|pcb|fpga|plc|scada|instrument\w*|substation\w*|solar|rf|vlsi|"
+                        r"asic|switchgear|mechatronic\w*|automation|elv|cctv|biomedical)\b", re.I)
+# IT-office work, from the title alone: not electrical or electronic however it is worded.
+IT_OFFICE = re.compile(r"\b(?:(?:it|ict|information technology|information security|cyber ?security|digital|data|web|server|"
+                       r"system|systems) (?:executive|officer|assistant|specialist|administrator|manager|analyst)|"
+                       r"(?:executive|officer|assistant|specialist|manager|analyst)\s*[-–:(/|]*\s*(?:it|ict|information technology)|"
+                       r"(?:it|ict) (?:support|services?|and|&)|information (?:technology|security)|cyber ?security|"
+                       r"server support|help ?desk|service ?desk|desktop support|customer support|technical writer|"
+                       r"digital services|ai transformation|artificial intelligence|machine learning|"
+                       r"(?:lecturer|tutor|instructor|trainer|teacher|programme coordinator)\b[^|]*\b(?:it|ict|information technology|"
+                       r"software|cyber|computing|computer science|programming|networking|network technology)|"
+                       r"(?:it|ict|software|cyber ?security|computing)\b[^|]*\b(?:lecturer|tutor|instructor|trainer))\b", re.I)
 # Clearly software, from the title alone.
 SOFTWARE = re.compile(r"\b(?:software|developer|programmer|front[\s-]?end|back[\s-]?end|full[\s-]?stack|web|ui|ux|qa|"
                       r"data (?:scientist|analyst|engineer)|machine learning|java|python|php|\.net|react|mobile app|"
@@ -77,32 +91,42 @@ def lines(cfg: Config) -> list[str]:
 
 
 def title_says_eee(job: Job, cfg: Config) -> bool:
-    return any(matching_keywords(sf.keywords, job.title) for sf in cfg.enabled_subfields)
+    """The title names an electrical / electronic / telecom field (a bare "Lecturer" or "Sales Engineer" does not)."""
+    return any(matching_keywords(sf.keywords, job.title) for sf in cfg.enabled_subfields if sf.key not in _ROLE_FIELDS)
+
+
+_ROLE_FIELDS = {"teaching", "technical_sales"}  # their keywords ("lecturer", "sales engineer") are roles, not electrical work
 
 
 def evidence_terms(job: Job, cfg: Config) -> set[str]:
-    """Electrical / electronic / telecom words in the posting text (and your sub-fields' own keywords)."""
+    """Electrical / electronic / telecom words in the posting text (and your technical sub-fields' own keywords)."""
     text = f"{job.description}\n{job.category}"
     found = {m.group(0).lower() for m in EVIDENCE.finditer(text)}
-    return found | distinct_hits(sorted({k for sf in cfg.enabled_subfields for k in sf.keywords}), text)
+    words = sorted({k for sf in cfg.enabled_subfields if sf.key not in _ROLE_FIELDS for k in sf.keywords})
+    return found | distinct_hits(words, text)
 
 
 def assess(job: Job, cfg: Config) -> tuple[str, str]:
     """(verdict, reason) from plain rules: "no" when the job clearly isn't EEE work, "match" when its own title names an
     EEE field, "maybe" when nothing fails but the posting doesn't settle it."""
-    title, text = job.title, f"{job.description}\n{job.category}"
+    title = job.title
     says = title_says_eee(job, cfg)
     sales_wanted = any(sf.key == "technical_sales" for sf in cfg.enabled_subfields)
     if SALES.search(title) and not sales_wanted:
         return "no", "a sales role"
-    if NOT_TECH.search(title) and not HARDWAREISH.search(title):
-        return "no", "not engineering work"
-    if SOFTWARE.search(title) and not HARDWAREISH.search(title) and not says:
+    strict = bool(STRICT_EEE.search(title))
+    not_tech = {m.group(0).lower() for m in NOT_TECH.finditer(title)}
+    if not_tech and not strict and not (all(w.startswith("admin") for w in not_tech) and HARDWAREISH.search(title)):
+        return "no", "not engineering work"  # ("Network Administrator" is fine; "Graphic Designer | IT Hardware" is not)
+    if SOFTWARE.search(title) and not strict and not (HARDWAREISH.search(title) and says):
         return "no", "software / IT work, not electrical or electronic"
     evidence = evidence_terms(job, cfg)
+    if IT_OFFICE.search(title) and not strict and len(evidence) < 2:
+        return "no", "IT office or support work, nothing electrical or electronic in it"
     if says and not job.rescued:
         return "match", "the title names an EEE field"
-    if len(job.description) >= _MIN_TEXT and not evidence and not says:
+    has_text = len(job.description) >= 200
+    if has_text and not evidence and not says:
         return "no", "the posting doesn't mention electrical, electronic or telecom work"
     if IT_DESK.search(title) and len(evidence) < 2 and not says:
         return "no" if len(job.description) >= _MIN_TEXT else "maybe", "IT support / systems work unless the posting says otherwise"

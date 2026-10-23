@@ -363,7 +363,8 @@ def test_run_end_to_end_with_helpers(tmp_path, monkeypatch, cfg):
         @staticmethod
         def fetch(http, opts, cfg):
             return [
-                Job(source="Board", source_id="1", title="Project Engineer", url="https://b/1", company="Lanka Power"),
+                Job(source="Board", source_id="1", title="Project Engineer", url="https://b/1", company="Lanka Power",
+                    description="Design of earthing, cabling and wiring for the utility's new sites. " * 4),
                 Job(source="Board", source_id="2", title="Receptionist", url="https://b/2"),
                 Job(source="Board", source_id="3", title="Embedded Firmware Engineer", url="https://b/3", company="Acme", remote=True,
                     location="Remote – Worldwide", description="Build firmware. " * 20, remote_rule="unsure"),
@@ -598,9 +599,11 @@ def test_run_sends_the_three_missed_linkedin_posts_without_any_ai_key(tmp_path, 
 
     assert jobot_main.run(["--config", str(config), "--state", str(tmp_path / "seen.json"), "--no-read"]) == 0
     by = {j.title: j for j in sent[0].jobs}
-    assert set(by) == {t for t, _, _ in LINKEDIN_MISSES}
+    # Without the AI and without their postings, only the job whose title names an EEE field goes out: the two
+    # "Associate Engineer" titles show nothing electrical, and "I couldn't tell" is not a reason to send.
+    assert set(by) == {"Technical Officer telecom projects"}
     assert by["Technical Officer telecom projects"].qual_guess and "guessed from the title" in sent[0].email_text()
-    assert "check it suits EEE" in by["Associate Engineer - TechOps"].ai_note
+    assert "Held back (not matching your requirements)" in sent[0].email_text() and "Associate Engineer" in sent[0].email_text()
 
 
 def test_explain_says_where_a_job_is_lost(cfg):

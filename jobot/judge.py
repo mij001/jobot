@@ -78,6 +78,14 @@ def judge(kept: list[Job], cfg: Config, env: dict[str, str], schedule: Schedule,
             job.ai_verdict, job.ai_score = "no", min(job.ai_score if job.ai_score is not None else 4, 4)
             job.ai_reason = "the posting doesn't show electrical, electronic or telecom work"
 
+    # Nothing waits any longer and nothing shows electrical work (the title doesn't say it, the posting has no trace of it,
+    # and the AI didn't read it): not sent. "I couldn't tell" is not a reason to send.
+    for job in kept:
+        if (job.uid not in waiting_uids and job.rule_verdict == "maybe" and not job.ai_verdict and job.ai_score is None
+                and not requirements.title_says_eee(job, cfg) and not requirements.evidence_terms(job, cfg)):
+            job.rule_verdict = "no"
+            job.ai_reason = job.ai_reason or "nothing in the title or posting shows electrical, electronic or telecom work"
+
     out.waiting = waiting
     judged = [j for j in kept if j.uid not in waiting_uids]
     out.held = sorted((j for j in judged if ai.is_hidden(j, cfg)), key=lambda j: -(j.ai_score or 0))

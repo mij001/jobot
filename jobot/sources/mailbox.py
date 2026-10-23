@@ -105,7 +105,7 @@ def parse_message(raw: bytes, sender_domains: list[str], extract=None) -> list[J
         if not href.startswith(("http://", "https://")):
             continue
         text = " ".join(a.get_text(" ", strip=True).split())
-        if not (6 <= len(text) <= 140) or _NOISE.match(text):
+        if not (6 <= len(text) <= 140) or _NOISE.match(text) or text.lower().startswith(("jobs similar to", "similar jobs")):
             continue
         if not (pattern.search(href) or pattern.search(unquote(a["href"]))):
             continue
