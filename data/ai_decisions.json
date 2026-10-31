@@ -45,6 +45,7 @@
 "Email alert (linkedin.com):4472536106": "y:general:20261022",
 "Email alert (linkedin.com):4473090363": "n:20261022",
 "Email alert (linkedin.com):4474663695": "n:20261028",
+"Email alert (linkedin.com):4475267997": "n:20261031",
 "Email alert (linkedin.com):4475290153": "y:general:20261022",
 "Email alert (linkedin.com):4475778861": "n:20261031",
 "Email alert (linkedin.com):4476278263": "n:20261022",
@@ -221,6 +222,7 @@
 "LankaJobs:works-superintendent-civil-sri-lanka-ports-authority-sri-lanka": "n:20261027",
 "LinkedIn:4307029032": "n:20261023",
 "LinkedIn:4377685846": "n:20261024",
+"LinkedIn:4422361707": "y:electronics:20261031",
 "LinkedIn:4436387508": "n:20261023",
 "LinkedIn:4443608705": "n:20261023",
 "LinkedIn:4447346769": "n:20261030",
@@ -379,6 +381,8 @@
 "LinkedIn:4484909832": "n:20261030",
 "LinkedIn:4484915518": "y:maintenance:20261029",
 "LinkedIn:4484925915": "y:maintenance:20261030",
+"LinkedIn:4485143886": "y:security_systems:20261031",
+"LinkedIn:4485143930": "n:20261031",
 "LinkedIn:4485144338": "y:general:20261031",
 "LinkedIn:4485286285": "n:20261030",
 "LinkedIn:4485290438": "n:20261030",
@@ -2399,5 +2403,6 @@
 "topjobs.lk:1566293": "n:20261031",
 "topjobs.lk:1566308": "y:general:20261031",
 "topjobs.lk:1566313": "n:20261031",
+"topjobs.lk:1566320": "n:20261031",
 "topjobs.lk:1566326": "n:20261031"
 }
